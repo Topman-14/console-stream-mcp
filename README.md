@@ -69,6 +69,18 @@ The extension never captures anything by default. Click its toolbar icon and hit
 * `clear_logs`
 * `get_connected_tabs`
 * `set_active_tab`
+* `navigate_to`, `switch_tab`, `reload_tab` — browser control (extension only)
+* `list_tabs` — every open tab, not just capture-enabled ones (requires an extension connected somewhere)
+* `get_job_status`, `get_job_result`, `cancel_job` — for longer-running operations added in later stages (recordings, profiling)
+* `start_debug_session`, `end_debug_session` — record a time-ordered timeline of console/network/navigation/DOM events instead of correlating separate snapshots by hand (single-tab, doesn't survive a full-page navigation)
+* `wait_for_console_error`, `wait_for_navigation`, `wait_for_request`, `wait_for_element` — block (with timeout) until a condition occurs instead of polling `get_logs_since` in a loop
+* `take_screenshot`, `capture_full_page`, `capture_element` — extension only, requires `chrome.debugger` (CDP)
+* `capture_dom`, `capture_accessibility_tree` — extension only, requires CDP
+* `evaluate_js` — run arbitrary JS in a tab and get the result; extension only, requires CDP, fully open (no read-only enforcement)
+* `get_response_body`, `export_har` — extension only for `get_response_body` (requires CDP); `export_har` works from stored network events for either client but never includes bodies
+* `start_cpu_profile`, `start_memory_profile` — extension only, requires CDP, job-based (see `get_job_status`/`get_job_result`)
+
+CDP tools (marked "requires CDP" above) make Chrome show a persistent "being debugged" banner on the tab once used — the debugger attaches on first use and stays attached, it doesn't attach/detach per call. This is a Chrome-level indicator, not something the extension can suppress. `start_cpu_profile`/`start_memory_profile` durations are capped at 60s and best-effort beyond ~25-30s — Chrome can terminate an idle MV3 background service worker, which would cut a long profile short.
 
 ## Client capabilities
 

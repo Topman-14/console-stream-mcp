@@ -141,6 +141,34 @@ export function patchNetwork(emit: Emit): () => void {
   };
 }
 
+function shortSelector(el: Element): string {
+  const id = el.id ? `#${el.id}` : "";
+  const cls = el.classList.length > 0 ? `.${Array.from(el.classList).join(".")}` : "";
+  return `${el.tagName.toLowerCase()}${id}${cls}`;
+}
+
+/** Not started by default — DOM mutation observers are noisy/expensive on a busy
+ * page, so this is only wired up during an explicit debug session. */
+export function patchDomMutations(emit: Emit): () => void {
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      emit({
+        type: "dom.mutation",
+        timestamp: Date.now(),
+        url: window.location.href,
+        mutationType: mutation.type,
+        targetSelector: mutation.target instanceof Element ? shortSelector(mutation.target) : undefined,
+        addedCount: mutation.addedNodes.length,
+        removedCount: mutation.removedNodes.length,
+      });
+    }
+  });
+
+  observer.observe(document.documentElement, { childList: true, attributes: true, characterData: true, subtree: true });
+
+  return () => observer.disconnect();
+}
+
 export function startCapture(emit: Emit): () => void {
   const unpatchConsole = patchConsole(emit);
   const unpatchErrors = patchGlobalErrors(emit);

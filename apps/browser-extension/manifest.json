@@ -3,7 +3,7 @@
   "name": "console-stream-mcp",
   "version": "0.0.1",
   "description": "Streams browser console/network events to a local console-stream-mcp server for AI coding agents. Click the icon to enable capture on a tab.",
-  "permissions": ["scripting", "activeTab", "storage", "tabs", "webNavigation"],
+  "permissions": ["scripting", "activeTab", "storage", "tabs", "webNavigation", "debugger"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "iife/background.js"

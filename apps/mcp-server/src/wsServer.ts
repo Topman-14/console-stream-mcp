@@ -3,8 +3,9 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { PROTOCOL_VERSION, isProtocolVersionSupported, type ClientMessage } from "@console-stream-mcp/protocol";
 import type { EventStore } from "./store.js";
 import type { ClientRegistry } from "./registry.js";
+import type { CommandDispatcher } from "./commandDispatcher.js";
 
-export function startWsServer(port: number, store: EventStore, registry: ClientRegistry): WebSocketServer {
+export function startWsServer(port: number, store: EventStore, registry: ClientRegistry, dispatcher: CommandDispatcher): WebSocketServer {
   const wss = new WebSocketServer({ host: "localhost", port });
 
   wss.on("connection", (ws: WebSocket) => {
@@ -38,6 +39,11 @@ export function startWsServer(port: number, store: EventStore, registry: ClientR
       if (message.kind === "bye" && clientIds.has(message.clientId)) {
         clientIds.delete(message.clientId);
         registry.markDisconnected(message.clientId);
+        return;
+      }
+
+      if (message.kind === "ack") {
+        dispatcher.handleAck(message.commandId, message.result, message.error);
       }
     });
 

@@ -4,10 +4,12 @@ import { z } from "zod";
 import type { EventType } from "@console-stream-mcp/protocol";
 import type { EventStore } from "./store.js";
 import type { ClientRegistry } from "./registry.js";
-
-const CONSOLE_TYPES: EventType[] = ["console.log", "console.info", "console.warn"];
-const ERROR_TYPES: EventType[] = ["console.error", "window.onerror", "unhandledrejection"];
-const NETWORK_TYPES: EventType[] = ["network.fetch", "network.xhr"];
+import type { CommandDispatcher } from "./commandDispatcher.js";
+import type { JobManager } from "./jobs.js";
+import { CONSOLE_TYPES, ERROR_TYPES, NETWORK_TYPES } from "./eventCategories.js";
+import type { DebugSessionManager } from "./debugSession.js";
+import { waitForConsoleError, waitForNavigation, waitForRequest } from "./waitFor.js";
+import { toHar } from "./har.js";
 
 function toolResult(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -17,7 +19,13 @@ function toolError(message: string) {
   return { content: [{ type: "text" as const, text: message }], isError: true as const };
 }
 
-export function createMcpServer(store: EventStore, registry: ClientRegistry): McpServer {
+export function createMcpServer(
+  store: EventStore,
+  registry: ClientRegistry,
+  dispatcher: CommandDispatcher,
+  jobs: JobManager,
+  debugSessions: DebugSessionManager,
+): McpServer {
   const server = new McpServer({ name: "console-stream-mcp", version: "0.0.1" });
 
   let activeTabId: string | undefined;
@@ -109,6 +117,327 @@ export function createMcpServer(store: EventStore, registry: ClientRegistry): Mc
       }
       activeTabId = tabId;
       return toolResult({ active: tabId });
+    },
+  );
+
+  server.tool(
+    "navigate_to",
+    "Navigate a connected browser tab to a URL.",
+    { tabId: z.string().optional(), url: z.string() },
+    async ({ tabId, url }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "navigate_to", { url }));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "switch_tab",
+    "Bring a connected browser tab to the foreground.",
+    { tabId: z.string().optional() },
+    async ({ tabId }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "switch_tab", {}));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "reload_tab",
+    "Reload a connected browser tab.",
+    { tabId: z.string().optional() },
+    async ({ tabId }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "reload_tab", {}));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "list_tabs",
+    "List all open browser tabs (not just ones with capture enabled), via a connected extension.",
+    {},
+    async () => {
+      const extensionClient = registry.list().find((c) => c.capabilities.includes("cdp"));
+      if (!extensionClient) {
+        return toolError("No extension connected. list_tabs requires the console-stream-mcp extension to be enabled on at least one tab.");
+      }
+      try {
+        return toolResult(await dispatcher.sendCommand(extensionClient.clientId, "list_tabs", {}));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool("get_job_status", "Check the status of a long-running job (recording, profiling, etc).", { jobId: z.string() }, async ({ jobId }) => {
+    const job = jobs.getStatus(jobId);
+    if (!job) return toolError(`No job with id ${jobId}`);
+    return toolResult({ id: job.id, kind: job.kind, status: job.status, error: job.error });
+  });
+
+  server.tool("get_job_result", "Get the result of a completed job.", { jobId: z.string() }, async ({ jobId }) => {
+    const job = jobs.getResult(jobId);
+    if (!job) return toolError(`No job with id ${jobId}`);
+    if (job.status === "running") return toolError(`Job ${jobId} is still running, check get_job_status first.`);
+    if (job.status === "error") return toolError(job.error ?? "Job failed");
+    return toolResult(job.result);
+  });
+
+  server.tool("cancel_job", "Cancel a running job. Best-effort — in-flight work may not stop immediately.", { jobId: z.string() }, async ({ jobId }) => {
+    const cancelled = jobs.cancel(jobId);
+    return toolResult({ cancelled });
+  });
+
+  function requireCdp(clientId: string): ReturnType<typeof toolError> | undefined {
+    const client = registry.get(clientId);
+    if (!client?.capabilities.includes("cdp")) {
+      return toolError(`Tab ${clientId} doesn't support this (requires the browser extension, not the npm client).`);
+    }
+    return undefined;
+  }
+
+  server.tool(
+    "take_screenshot",
+    "Capture a screenshot of a connected tab's current viewport. Requires the browser extension. Shows Chrome's 'being debugged' indicator while attached.",
+    { tabId: z.string().optional() },
+    async ({ tabId }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "take_screenshot", {}));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "capture_full_page",
+    "Capture a screenshot of a connected tab's full scrollable page, not just the viewport. Requires the browser extension.",
+    { tabId: z.string().optional() },
+    async ({ tabId }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_full_page", {}));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "capture_element",
+    "Capture a screenshot of one element matching a CSS selector. Requires the browser extension.",
+    { tabId: z.string().optional(), selector: z.string() },
+    async ({ tabId, selector }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_element", { selector }));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "capture_dom",
+    "Get the tab's current DOM as HTML (document.documentElement.outerHTML). Requires the browser extension.",
+    { tabId: z.string().optional() },
+    async ({ tabId }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_dom", {}));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "capture_accessibility_tree",
+    "Get the tab's full accessibility tree. Requires the browser extension.",
+    { tabId: z.string().optional() },
+    async ({ tabId }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_accessibility_tree", {}));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "evaluate_js",
+    "Execute arbitrary JavaScript in a connected tab and return the result. Fully open, no read-only enforcement — this is the dev's own browser and app. Requires the browser extension.",
+    { tabId: z.string().optional(), expression: z.string() },
+    async ({ tabId, expression }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "evaluate_js", { expression }));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "get_response_body",
+    "Get the response body of a recent network request by URL, if it's still available. Requires the browser extension and only covers requests made since the tab connected.",
+    { tabId: z.string().optional(), requestUrl: z.string() },
+    async ({ tabId, requestUrl }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      try {
+        return toolResult(await dispatcher.sendCommand(resolved.clientId, "get_response_body", { requestUrl }));
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool(
+    "export_har",
+    "Export this tab's captured network requests as a HAR 1.2 file. Response bodies are not included — use get_response_body per-request if needed.",
+    { tabId: z.string().optional(), limit: z.number().int().positive().max(2000).default(500) },
+    async ({ tabId, limit }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      return toolResult(toHar(store.getRecent(resolved.clientId, NETWORK_TYPES, limit)));
+    },
+  );
+
+  server.tool(
+    "start_cpu_profile",
+    "Start a CPU profile on a connected tab for a fixed duration; returns a jobId immediately, poll get_job_status/get_job_result. Requires the browser extension.",
+    { tabId: z.string().optional(), durationMs: z.number().int().positive().max(60_000).default(5000) },
+    async ({ tabId, durationMs }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      const job = jobs.startJob("cpu-profile", () => dispatcher.sendCommand(resolved.clientId, "start_cpu_profile", { durationMs }, durationMs + 5000));
+      return toolResult({ jobId: job.id });
+    },
+  );
+
+  server.tool(
+    "start_memory_profile",
+    "Start a memory (heap sampling) profile on a connected tab for a fixed duration; returns a jobId immediately, poll get_job_status/get_job_result. Requires the browser extension.",
+    { tabId: z.string().optional(), durationMs: z.number().int().positive().max(60_000).default(5000) },
+    async ({ tabId, durationMs }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const cdpError = requireCdp(resolved.clientId);
+      if (cdpError) return cdpError;
+      const job = jobs.startJob("memory-profile", () => dispatcher.sendCommand(resolved.clientId, "start_memory_profile", { durationMs }, durationMs + 5000));
+      return toolResult({ jobId: job.id });
+    },
+  );
+
+  server.tool(
+    "start_debug_session",
+    "Start recording a time-ordered timeline of events (console, network, navigation, and optionally DOM mutations) for one tab. Does not survive a full-page navigation on that tab.",
+    { tabId: z.string().optional(), capture: z.array(z.enum(["console", "network", "navigation", "dom"])).default(["console", "network", "navigation"]) },
+    async ({ tabId, capture }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      try {
+        const session = await debugSessions.start(resolved.clientId, capture);
+        return toolResult({ sessionId: session.id });
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.tool("end_debug_session", "Stop a debug session and return its time-ordered event timeline.", { sessionId: z.string() }, async ({ sessionId }) => {
+    const result = await debugSessions.end(sessionId);
+    if (!result) return toolError(`No active session with id ${sessionId}`);
+    return toolResult(result);
+  });
+
+  server.tool(
+    "wait_for_console_error",
+    "Block until the next console.error/window.onerror/unhandledrejection on a tab, or timeout.",
+    { tabId: z.string().optional(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
+    async ({ tabId, timeoutMs }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const event = await waitForConsoleError(store, resolved.clientId, timeoutMs);
+      return toolResult(event ?? { timedOut: true });
+    },
+  );
+
+  server.tool(
+    "wait_for_navigation",
+    "Block until the next navigation event on a tab, or timeout. Only fires for rule-enabled tabs (see README).",
+    { tabId: z.string().optional(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
+    async ({ tabId, timeoutMs }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const event = await waitForNavigation(store, resolved.clientId, timeoutMs);
+      return toolResult(event ?? { timedOut: true });
+    },
+  );
+
+  server.tool(
+    "wait_for_request",
+    "Block until a network request whose URL contains urlPattern is observed on a tab, or timeout.",
+    { tabId: z.string().optional(), urlPattern: z.string(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
+    async ({ tabId, urlPattern, timeoutMs }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const event = await waitForRequest(store, resolved.clientId, urlPattern, timeoutMs);
+      return toolResult(event ?? { timedOut: true });
+    },
+  );
+
+  server.tool(
+    "wait_for_element",
+    "Block until a CSS selector appears in the tab's DOM, or timeout. Extension only.",
+    { tabId: z.string().optional(), selector: z.string(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
+    async ({ tabId, selector, timeoutMs }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      try {
+        const result = await dispatcher.sendCommand(resolved.clientId, "wait_for_element", { selector, timeoutMs }, timeoutMs + 2000);
+        return toolResult(result);
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
     },
   );
 

@@ -31,7 +31,7 @@ export function startConsoleStream(options: StartConsoleStreamOptions = {}): () 
       send({
         version: PROTOCOL_VERSION,
         kind: "hello",
-        client: { clientId, clientType: "npm-client", pageUrl: window.location.href, title: document.title },
+        client: { clientId, clientType: "npm-client", pageUrl: window.location.href, title: document.title, capabilities: [] },
       });
       while (queue.length > 0) {
         const msg = queue.shift()!;

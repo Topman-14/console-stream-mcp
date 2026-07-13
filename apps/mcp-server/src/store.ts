@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import type { BrowserEvent, EventType } from "@console-stream-mcp/protocol";
 
 const MAX_EVENTS_PER_TAB = Number(process.env.CONSOLE_STREAM_MAX_EVENTS_PER_TAB) || 1000;
@@ -49,6 +50,7 @@ class TabBuffer {
 export class EventStore {
   private buffers = new Map<string, TabBuffer>();
   private nextSeq = 1;
+  private emitter = new EventEmitter();
 
   private bufferFor(clientId: string): TabBuffer {
     let buffer = this.buffers.get(clientId);
@@ -62,7 +64,14 @@ export class EventStore {
   addEvent(event: Omit<BrowserEvent, "seq">): BrowserEvent {
     const stored = truncateFields({ ...event, seq: this.nextSeq++ } as BrowserEvent);
     this.bufferFor(event.clientId).push(stored);
+    this.emitter.emit("event", stored);
     return stored;
+  }
+
+  /** Fires for every event across all tabs; listeners filter by clientId/type themselves. */
+  onEvent(listener: (event: BrowserEvent) => void): () => void {
+    this.emitter.on("event", listener);
+    return () => this.emitter.off("event", listener);
   }
 
   getRecent(clientId: string, types: EventType[], limit: number): BrowserEvent[] {
@@ -73,6 +82,10 @@ export class EventStore {
     const events = this.buffers.get(clientId)?.getSince(cursor, opts) ?? [];
     const newCursor = events.length > 0 ? events[events.length - 1].seq : cursor;
     return { events, cursor: newCursor };
+  }
+
+  currentSeq(): number {
+    return this.nextSeq - 1;
   }
 
   clear(clientId: string): void {
