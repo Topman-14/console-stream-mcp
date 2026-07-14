@@ -9,6 +9,7 @@ import { Badge } from "../../components/ui/badge.js";
 import { Card, CardContent } from "../../components/ui/card.js";
 import { ScrollArea } from "../../components/ui/scroll-area.js";
 import { Separator } from "../../components/ui/separator.js";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
 import { WS_URL, REPO_URL, STATUS_LABEL, STATUS_DOT, COUNTER_ITEMS, KIND_DOT, KIND_TEXT, KIND_LABEL } from "./data.js";
 
@@ -55,6 +56,7 @@ export function Popup() {
   const [state, setState] = useState<TabState | null | undefined>(undefined);
   const [elapsed, setElapsed] = useState<string | undefined>();
   const [rules, setRulesState] = useState<CaptureRule[]>([]);
+  const [ruleJustAdded, setRuleJustAdded] = useState(false);
 
   useEffect(() => {
     getActiveTab().then(async (tab) => {
@@ -115,7 +117,11 @@ export function Popup() {
     const next = [...(await getRules()), rule];
     await setRules(next);
     setRulesState(next);
-    chrome.runtime.openOptionsPage();
+    setRuleJustAdded(true);
+    // Rules only get evaluated on the *next* navigation (chrome.webNavigation.onCommitted
+    // in background.ts) — enable this visit too so "auto-enable" also takes effect
+    // immediately instead of only on the next page load.
+    if (!state) await start();
   };
 
   const status = push?.connection.status ?? "disconnected";
@@ -123,8 +129,10 @@ export function Popup() {
   const feed = push?.live.feed ?? [];
   const capturing = state && !state.paused;
   const autoEnabled = tabUrl ? Boolean(findMatchingRule(tabUrl, rules)) : true;
+  const mcpDown = !push || push.connection.status !== "connected";
 
   return (
+    <TooltipProvider>
     <div className="flex flex-col divide-y divide-border">
       {/* connection header */}
       <div className="flex items-center justify-between px-3 py-2.5">
@@ -224,10 +232,17 @@ export function Popup() {
       {/* controls + quick actions */}
       <div className="flex flex-col gap-2 px-3 py-3">
         {!state ? (
-          <Button className="w-full" onClick={start}>
-            <Play size={14} weight="fill" />
-            Start capture
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="block w-full">
+                <Button className="w-full" onClick={start} disabled={mcpDown}>
+                  <Play size={14} weight="fill" />
+                  Enable tab
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {mcpDown && <TooltipContent>MCP server isn't running. Start it (e.g. npx mobius-mcp) and connect your agent, then try again.</TooltipContent>}
+          </Tooltip>
         ) : (
           <div className="grid grid-cols-2 gap-2">
             <Button variant="secondary" onClick={pause}>
@@ -271,12 +286,21 @@ export function Popup() {
 
         {state && !state.paused ? <p className="text-center text-sm pt-2 text-muted-foreground">Your agent can now fetch this tab's runtime context via MCP.</p> : null}
 
-        {host && !autoEnabled && (
-          <Button variant="outline" onClick={addCurrentHostRule} className="h-auto justify-start border-dashed py-2 w-[100%]">
-            Want to always capture <span className="font-mono">{host}</span>? Click here to auto-enable this host.
+        {host && !autoEnabled && !ruleJustAdded && (
+          <Button variant="outline" onClick={addCurrentHostRule} className="h-auto justify-start border-dashed py-2 w-full">
+            <span className="whitespace-normal text-left">
+              Want to always capture <span className="font-mono">{host}</span>? Click here to auto-enable this host.
+            </span>
           </Button>
+        )}
+
+        {ruleJustAdded && (
+          <p className="text-center text-xs text-muted-foreground">
+            {host} will auto-capture from now on. Manage rules under Options.
+          </p>
         )}
       </div>
     </div>
+    </TooltipProvider>
   );
 }

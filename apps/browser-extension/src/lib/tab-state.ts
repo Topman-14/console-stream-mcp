@@ -40,3 +40,13 @@ export async function getTabIdForClient(clientId: string): Promise<number | unde
   const result = await chrome.storage.session.get(reverseKey(clientId));
   return result[reverseKey(clientId)];
 }
+
+export async function getAllTabStates(): Promise<Record<number, TabState>> {
+  const all = await chrome.storage.session.get(null);
+  const result: Record<number, TabState> = {};
+  for (const [k, value] of Object.entries(all)) {
+    if (!k.startsWith("tabState:")) continue;
+    result[Number(k.slice("tabState:".length))] = value as TabState;
+  }
+  return result;
+}

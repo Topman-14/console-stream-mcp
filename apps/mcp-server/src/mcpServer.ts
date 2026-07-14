@@ -19,14 +19,36 @@ function toolError(message: string) {
   return { content: [{ type: "text" as const, text: message }], isError: true as const };
 }
 
+export interface ToolDef {
+  description: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  schema: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handler: (args: any) => Promise<any>;
+}
+
+/** Every call below goes through the same 4-arg server.tool(name, description, schema, handler)
+ * signature, so recording them for the control channel (see ControlMessage in the protocol
+ * package) is a one-line intercept rather than restructuring each tool definition. */
+function withToolRecording(server: McpServer, defs: Map<string, ToolDef>): McpServer {
+  const original = server.tool.bind(server);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (server as any).tool = (name: string, description: string, schema: unknown, handler: (args: unknown) => Promise<unknown>) => {
+    defs.set(name, { description, schema, handler });
+    return (original as (...args: unknown[]) => unknown)(name, description, schema, handler);
+  };
+  return server;
+}
+
 export function createMcpServer(
   store: EventStore,
   registry: ClientRegistry,
   dispatcher: CommandDispatcher,
   jobs: JobManager,
   debugSessions: DebugSessionManager,
-): McpServer {
-  const server = new McpServer({ name: "mobius-mcp", version: "0.0.1" });
+): { server: McpServer; toolDefs: Map<string, ToolDef> } {
+  const toolDefs = new Map<string, ToolDef>();
+  const server = withToolRecording(new McpServer({ name: "mobius-mcp", version: "0.0.1" }), toolDefs);
 
   let activeTabId: string | undefined;
 
@@ -105,6 +127,19 @@ export function createMcpServer(
 
   server.tool("get_connected_tabs", "List browser tabs/pages currently streaming events to this server.", {}, async () =>
     toolResult(registry.list().map((c) => ({ ...c, active: c.clientId === activeTabId }))),
+  );
+
+  server.tool(
+    "get_capture_settings",
+    "Get which event categories (console, errors, network, navigation, dom) a connected tab is actively capturing, plus its redaction settings. Check this before concluding an empty result from get_recent_logs/get_recent_errors/get_network_requests means nothing happened — the category may simply be turned off.",
+    { tabId: z.string().optional() },
+    async ({ tabId }) => {
+      const resolved = resolveTabId(tabId);
+      if ("error" in resolved) return resolved.error;
+      const client = registry.get(resolved.clientId);
+      if (!client) return toolError(`Tab ${resolved.clientId} is no longer connected.`);
+      return toolResult({ tabId: resolved.clientId, captureSettings: client.captureSettings ?? null });
+    },
   );
 
   server.tool(
@@ -441,6 +476,30 @@ export function createMcpServer(
     },
   );
 
+  return { server, toolDefs };
+}
+
+/**
+ * Built by a follower process (lost the port-bind race to an existing hub — see index.ts).
+ * Reuses the hub's exact tool metadata (name/description/schema) so `tools/list` looks
+ * identical to a real hub, but every handler forwards to the hub over `invoke` instead of
+ * touching local state — a follower never has a real store/registry/dispatcher of its own.
+ */
+export function createFollowerMcpServer(toolDefs: Map<string, ToolDef>, invoke: (tool: string, args: unknown) => Promise<unknown>): McpServer {
+  const server = new McpServer({ name: "mobius-mcp", version: "0.0.1" });
+  for (const [name, def] of toolDefs) {
+    const handler = async (args: unknown) => {
+      try {
+        return await invoke(name, args);
+      } catch (err) {
+        return toolError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    // def.schema is untyped (`any`) since it's harvested at runtime from an arbitrary tool
+    // definition — the 4-arg (name, description, schema, handler) overload is still the
+    // right one, TS just can't prove it through the erased type, so this bypasses the check.
+    (server.tool as (...args: unknown[]) => unknown)(name, def.description, def.schema, handler);
+  }
   return server;
 }
 

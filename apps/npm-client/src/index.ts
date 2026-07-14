@@ -3,10 +3,15 @@ import { PROTOCOL_VERSION, type ClientMessage } from "@mobius-mcp/protocol";
 
 export interface StartMobiusStreamOptions {
   port?: number;
+  console?: boolean;
+  errors?: boolean;
+  network?: boolean;
+  navigation?: boolean;
 }
 
 export function startMobiusStream(options: StartMobiusStreamOptions = {}): () => void {
   const port = options.port ?? 7331;
+  const { console: captureConsole = true, errors = true, network = true, navigation = true } = options;
   const clientId = crypto.randomUUID();
   let ws: WebSocket | null = null;
   let stopped = false;
@@ -31,7 +36,14 @@ export function startMobiusStream(options: StartMobiusStreamOptions = {}): () =>
       send({
         version: PROTOCOL_VERSION,
         kind: "hello",
-        client: { clientId, clientType: "npm-client", pageUrl: window.location.href, title: document.title, capabilities: [] },
+        client: {
+          clientId,
+          clientType: "npm-client",
+          pageUrl: window.location.href,
+          title: document.title,
+          capabilities: [],
+          captureSettings: { console: captureConsole, errors, network, navigation, dom: false },
+        },
       });
       while (queue.length > 0) {
         const msg = queue.shift()!;
@@ -50,9 +62,12 @@ export function startMobiusStream(options: StartMobiusStreamOptions = {}): () =>
 
   connect();
 
-  const unpatch = startCapture((event) => {
-    send({ version: PROTOCOL_VERSION, kind: "event", clientId, event });
-  });
+  const unpatch = startCapture(
+    (event) => {
+      send({ version: PROTOCOL_VERSION, kind: "event", clientId, event });
+    },
+    { console: captureConsole, errors, network, navigation },
+  );
 
   return () => {
     stopped = true;

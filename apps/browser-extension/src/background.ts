@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "@mobius-mcp/protocol";
 import type { CapturedEvent } from "@mobius-mcp/capture-core";
 import { findMatchingRule, getRules } from "./lib/rules.js";
-import { getTabState, setTabState, setPaused, clearTabState, getTabIdForClient, type TabState } from "./lib/tab-state.js";
+import { getTabState, setTabState, setPaused, clearTabState, getTabIdForClient, getAllTabStates, type TabState } from "./lib/tab-state.js";
 import { sendCdp, detach, findRequestId } from "./lib/cdp.js";
 import {
   setConnectionStatus,
@@ -13,10 +13,13 @@ import {
   registerPort,
   registerAllPort,
   getAllLiveState,
+  getPushState,
+  getPushAllState,
   connectionStatus,
   lastEventAt,
 } from "./lib/live-state.js";
 import { mcpSettings, performanceSettings, generalSettings, debugSettings } from "./lib/settings.js";
+import { captureOptionsSetting } from "./lib/capture-options.js";
 
 let ws: WebSocket | null = null;
 let retryDelay = 500;
@@ -25,11 +28,10 @@ let verboseLogs = false;
 let notificationsEnabled = false;
 const queue: ClientMessage[] = [];
 
-const NOTIFICATION_ICON =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><rect width="128" height="128" rx="24" fill="#2563eb"/><circle cx="64" cy="64" r="28" fill="white"/></svg>',
-  );
+// chrome.notifications.create doesn't accept SVG data URIs for iconUrl (raster only) —
+// using one previously failed silently on every call ("Unable to download all specified
+// images"), so this points at a bundled PNG instead.
+const NOTIFICATION_ICON = chrome.runtime.getURL("icons/icon-48.png");
 
 function debugLog(...args: unknown[]) {
   if (verboseLogs) console.debug("[mobius-mcp]", ...args);
@@ -52,7 +54,7 @@ async function connect() {
   ws.addEventListener("open", () => {
     retryDelay = mcp.reconnectBaseDelayMs;
     setConnectionStatus("connected");
-    console.error(`[mobius-mcp] connected to mcp server on ws://localhost:${mcp.port}`);
+    console.log(`[mobius-mcp] connected to mcp server on ws://localhost:${mcp.port}`);
     while (queue.length > 0) {
       ws!.send(JSON.stringify(queue.shift()!));
     }
@@ -60,7 +62,7 @@ async function connect() {
 
   ws.addEventListener("close", () => {
     setConnectionStatus("disconnected");
-    console.error(`[mobius-mcp] disconnected from mcp server (ws://localhost:${mcp.port}), retrying in ${retryDelay}ms`);
+    console.warn(`[mobius-mcp] disconnected from mcp server (ws://localhost:${mcp.port}), retrying in ${retryDelay}ms`);
     setTimeout(connect, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 10_000);
   });
@@ -234,6 +236,28 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 bootSettings();
 connect();
+resumeCaptureAfterReload();
+
+// tabState (chrome.storage.session) survives a background-service-worker reload/restart,
+// but the WebSocket connection and every previously-injected content/injected script do
+// not — a reload silently orphans every tab that was capturing (the popup/logs UI still
+// claims they're "Capturing" since tabState says so, but nothing reaches the server
+// anymore). Re-run enableTab for each one still open so capture resumes transparently.
+async function resumeCaptureAfterReload(): Promise<void> {
+  const states = await getAllTabStates();
+  for (const [tabIdStr, state] of Object.entries(states)) {
+    const tabId = Number(tabIdStr);
+    try {
+      await chrome.tabs.get(tabId);
+    } catch {
+      await clearTabState(tabId);
+      await clearTabLiveState(tabId);
+      continue;
+    }
+    await enableTab(tabId, state.mode);
+    if (state.paused) await setPaused(tabId, true);
+  }
+}
 
 async function enableTab(tabId: number, mode: TabState["mode"]): Promise<string | undefined> {
   const tab = await chrome.tabs.get(tabId);
@@ -245,13 +269,21 @@ async function enableTab(tabId: number, mode: TabState["mode"]): Promise<string 
   await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content-script.js"], injectImmediately: true });
   await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["src/injected.js"], injectImmediately: true });
 
+  const capture = await captureOptionsSetting.get();
   send({
     version: PROTOCOL_VERSION,
     kind: "hello",
-    client: { clientId, clientType: "extension", pageUrl: tab.url, title: tab.title, capabilities: ["cdp"] },
+    client: {
+      clientId,
+      clientType: "extension",
+      pageUrl: tab.url,
+      title: tab.title,
+      capabilities: ["cdp"],
+      captureSettings: { console: capture.console, errors: capture.errors, network: capture.network, navigation: true, dom: capture.dom },
+    },
   });
 
-  console.error(`[mobius-mcp] enabled tab ${tabId} (${mode}): ${tab.url}`);
+  console.log(`[mobius-mcp] enabled tab ${tabId} (${mode}): ${tab.url}`);
   await startRecording(tabId);
 
   return clientId;
@@ -308,6 +340,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Polling fallback for the popup/logs live-state ports: a long-lived port opened before
+  // the MV3 service worker was suspended becomes a zombie once the worker restarts (its
+  // in-memory ports/allPorts registries in live-state.ts are wiped). sendMessage always
+  // wakes the worker fresh per call, so it self-heals regardless of port health.
+  if (message?.type === "mobius-mcp/get-live-state" && typeof message.tabId === "number") {
+    getPushState(message.tabId).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "mobius-mcp/get-all-live-state") {
+    getPushAllState().then(sendResponse);
+    return true;
+  }
+
   if (message?.type === "mobius-mcp/toggle") {
     getTabState(message.tabId).then(async (state) => {
       if (state) {
@@ -355,9 +401,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === "mobius-mcp/logs") {
-    console.error("[mobius-mcp] logs page connected");
+    console.log("[mobius-mcp] logs page connected");
     registerAllPort(port);
-    port.onDisconnect.addListener(() => console.error("[mobius-mcp] logs page disconnected"));
+    port.onDisconnect.addListener(() => console.log("[mobius-mcp] logs page disconnected"));
     return;
   }
 

@@ -146,18 +146,20 @@ export function registerAllPort(port: chrome.runtime.Port) {
   pushAllToPort(port);
 }
 
+export async function getPushState(tabId: number) {
+  return { connection: { status: connectionStatus, lastEventAt }, live: await getTabLiveState(tabId) };
+}
+
+export async function getPushAllState() {
+  return { connection: { status: connectionStatus, lastEventAt }, tabs: await getAllLiveState() };
+}
+
 async function pushToPort(port: chrome.runtime.Port, tabId: number) {
-  port.postMessage({
-    connection: { status: connectionStatus, lastEventAt },
-    live: await getTabLiveState(tabId),
-  });
+  port.postMessage(await getPushState(tabId));
 }
 
 async function pushAllToPort(port: chrome.runtime.Port) {
-  port.postMessage({
-    connection: { status: connectionStatus, lastEventAt },
-    tabs: await getAllLiveState(),
-  });
+  port.postMessage(await getPushAllState());
 }
 
 async function notify(tabId?: number) {

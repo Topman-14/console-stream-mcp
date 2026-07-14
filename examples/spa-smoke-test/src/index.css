@@ -1,0 +1,40 @@
+body {
+  font-family: system-ui, sans-serif;
+  max-width: 720px;
+  margin: 40px auto;
+  padding: 0 16px;
+}
+
+nav {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+nav a {
+  text-decoration: none;
+}
+
+nav a.active {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.scenario-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scenario-list button {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.dom-scratch-box {
+  border: 1px dashed #999;
+  padding: 8px;
+  min-height: 40px;
+}

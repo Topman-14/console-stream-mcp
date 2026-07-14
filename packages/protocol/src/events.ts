@@ -62,6 +62,14 @@ export type BrowserEvent =
 
 export type EventType = BrowserEvent["type"];
 
+export interface CaptureSettings {
+  console: boolean;
+  errors: boolean;
+  network: boolean;
+  navigation: boolean;
+  dom: boolean;
+}
+
 export interface ClientInfo {
   clientId: string;
   clientType: "extension" | "npm-client";
@@ -69,4 +77,5 @@ export interface ClientInfo {
   title?: string;
   capabilities: string[];
   connectedAt: number;
+  captureSettings?: CaptureSettings;
 }

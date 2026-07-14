@@ -14,7 +14,7 @@ function truncateFields(event: BrowserEvent): BrowserEvent {
       result[field] = value.slice(0, MAX_FIELD_LENGTH) + "…[truncated]";
     }
   }
-  return result as BrowserEvent;
+  return result as unknown as BrowserEvent;
 }
 
 class TabBuffer {

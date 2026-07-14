@@ -191,6 +191,46 @@ export function patchNetwork(emit: Emit, redaction: RedactionOptions = NO_REDACT
   };
 }
 
+export function patchNavigation(emit: Emit): () => void {
+  let lastUrl = window.location.href;
+
+  const report = () => {
+    const toUrl = window.location.href;
+    if (toUrl === lastUrl) return;
+    const fromUrl = lastUrl;
+    lastUrl = toUrl;
+    emit({
+      type: "navigation",
+      timestamp: Date.now(),
+      url: toUrl,
+      fromUrl,
+      toUrl,
+    });
+  };
+
+  const originalPushState = history.pushState.bind(history);
+  const originalReplaceState = history.replaceState.bind(history);
+
+  history.pushState = (...args: Parameters<History["pushState"]>) => {
+    originalPushState(...args);
+    report();
+  };
+  history.replaceState = (...args: Parameters<History["replaceState"]>) => {
+    originalReplaceState(...args);
+    report();
+  };
+
+  window.addEventListener("popstate", report);
+  window.addEventListener("hashchange", report);
+
+  return () => {
+    history.pushState = originalPushState;
+    history.replaceState = originalReplaceState;
+    window.removeEventListener("popstate", report);
+    window.removeEventListener("hashchange", report);
+  };
+}
+
 function shortSelector(el: Element): string {
   const id = el.id ? `#${el.id}` : "";
   const cls = el.classList.length > 0 ? `.${Array.from(el.classList).join(".")}` : "";
@@ -223,16 +263,18 @@ export interface CaptureStartOptions {
   console?: boolean;
   errors?: boolean;
   network?: boolean;
+  navigation?: boolean;
   redaction?: RedactionOptions;
 }
 
 export function startCapture(emit: Emit, options: CaptureStartOptions = {}): () => void {
-  const { console: captureConsole = true, errors = true, network = true, redaction = NO_REDACTION } = options;
+  const { console: captureConsole = true, errors = true, network = true, navigation = true, redaction = NO_REDACTION } = options;
 
   const unpatchers: Array<() => void> = [];
   if (captureConsole) unpatchers.push(patchConsole(emit, redaction));
   if (errors) unpatchers.push(patchGlobalErrors(emit, redaction));
   if (network) unpatchers.push(patchNetwork(emit, redaction));
+  if (navigation) unpatchers.push(patchNavigation(emit));
 
   return () => {
     for (const unpatch of unpatchers) unpatch();
