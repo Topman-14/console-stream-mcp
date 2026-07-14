@@ -35,7 +35,7 @@ export function Options() {
 
   const exportDiagnostics = async () => {
     setExporting(true);
-    await chrome.runtime.sendMessage({ type: "console-stream-mcp/export-diagnostics" });
+    await chrome.runtime.sendMessage({ type: "mobius-mcp/export-diagnostics" });
     setExporting(false);
   };
 
@@ -56,7 +56,7 @@ export function Options() {
     <div className="mx-auto max-w-[1200px] px-6 py-8">
       <h1 className="flex items-center gap-2 text-2xl font-semibold">
         <InfinityIcon size={32} weight="bold" className="text-primary" />
-        Console-stream-mcp
+        Mobius
       </h1>
       <p className="mt-1 text-muted-foreground">Settings for capture behavior, privacy, and the local MCP connection.</p>
 
@@ -70,17 +70,15 @@ export function Options() {
               <div className="mb-2 font-medium">Theme</div>
               <div className="grid grid-cols-3 gap-2">
                 {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
-                  <button
+                  <Button
                     key={value}
+                    variant={theme === value ? "secondary" : "outline"}
                     onClick={() => setTheme(value)}
-                    className={cn(
-                      "flex flex-col items-center gap-1.5 rounded-md border border-border py-2.5 text-sm transition-colors hover:bg-accent cursor-pointer",
-                      theme === value && "border-primary bg-accent text-foreground",
-                    )}
+                    className={cn("h-auto flex-col gap-1.5 py-2.5", theme === value && "border-primary")}
                   >
                     <Icon size={16} weight={theme === value ? "fill" : "regular"} />
                     {label}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -122,14 +120,10 @@ export function Options() {
 
             <div className="flex flex-wrap gap-1.5">
               {QUICK_PATTERNS.filter((p) => !rules.some((r) => r.pattern === p)).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => addPattern(p)}
-                  className="flex items-center gap-1 rounded-none border border-border px-2.5 py-1 font-mono  transition-colors hover:bg-accent"
-                >
+                <Button key={p} variant="outline" size="sm" onClick={() => addPattern(p)} className="rounded-none font-mono">
                   <PlusIcon size={10} />
                   {p}
-                </button>
+                </Button>
               ))}
             </div>
 
@@ -138,9 +132,9 @@ export function Options() {
               {rules.map((rule) => (
                 <li key={rule.id} className="flex items-center justify-between px-3 py-2">
                   <span className="font-mono text-sm">{rule.pattern}</span>
-                  <button onClick={() => removeRule(rule.id)} className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-destructive" aria-label={`Remove ${rule.pattern}`}>
+                  <Button variant="ghost" size="icon-sm" onClick={() => removeRule(rule.id)} className="hover:text-destructive" aria-label={`Remove ${rule.pattern}`}>
                     <TrashIcon size={13} />
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -222,7 +216,7 @@ export function Options() {
               <div className="flex items-center justify-between gap-4 py-2.5">
                 <div>
                   <div className="font-medium">WebSocket port</div>
-                  <div className="mt-0.5 text-sm text-muted-foreground">ws://localhost:{mcp.port}, must match the running console-stream-mcp server</div>
+                  <div className="mt-0.5 text-sm text-muted-foreground">ws://localhost:{mcp.port}, must match the running mobius-mcp server</div>
                 </div>
                 <Input type="number" min={1024} max={65535} className="w-24 text-right" value={mcp.port} onChange={(e) => updateMcp({ port: Number(e.target.value) })} />
               </div>

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving console-stream-mcp.
+Thanks for your interest in improving mobius-mcp.
 
 ## Setup
 
@@ -14,7 +14,7 @@ This is an npm workspaces monorepo:
 
 * `apps/mcp-server` — the MCP server
 * `apps/browser-extension` — Chromium extension client
-* `apps/npm-client` — `console-stream-client` npm package
+* `apps/npm-client` — `mobius-client` npm package
 * `packages/protocol` — shared event/message schema
 * `packages/shared-types` — shared TypeScript types
 

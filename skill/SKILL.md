@@ -1,15 +1,15 @@
 ---
-name: console-stream-mcp
-description: Live browser runtime visibility (console logs, errors, network requests) for a web app via the console-stream-mcp server. Use when debugging a running web app instead of asking the user to paste console output or network errors.
+name: mobius-mcp
+description: Live browser runtime visibility (console logs, errors, network requests) for a web app via the mobius-mcp server. Use when debugging a running web app instead of asking the user to paste console output or network errors.
 ---
 
-# console-stream-mcp
+# mobius-mcp
 
-`console-stream-mcp` is a local MCP server that streams live browser runtime events (console logs, uncaught errors, unhandled promise rejections, fetch/XHR requests) from a web app into the agent's context, via a browser extension or the `console-stream-client` npm package.
+`mobius-mcp` is a local MCP server that streams live browser runtime events (console logs, uncaught errors, unhandled promise rejections, fetch/XHR requests) from a web app into the agent's context, via a browser extension or the `mobius-client` npm package.
 
 ## When to use this
 
-Reach for these tools whenever you're debugging a web app that's running locally and connected to console-stream-mcp, instead of asking the user to copy-paste browser console output, error messages, or network traces:
+Reach for these tools whenever you're debugging a web app that's running locally and connected to mobius-mcp, instead of asking the user to copy-paste browser console output, error messages, or network traces:
 
 - The user reports a bug, error, or unexpected behavior in a running web app.
 - You need to confirm whether a code change actually fixed a runtime error.
@@ -55,7 +55,7 @@ These attach `chrome.debugger` to the tab on first use (shows Chrome's "being de
 
 ## Workflow
 
-1. Check `get_connected_tabs` to confirm a tab is streaming. If it doesn't show the tab you expect, **that means capture isn't enabled there yet** — it is not a broken server. Ask the user to click the console-stream-mcp extension icon and enable capture on that tab (capture is opt-in per tab; a settings-page rule can also auto-enable it for a matching host/port, but nothing streams by default).
+1. Check `get_connected_tabs` to confirm a tab is streaming. If it doesn't show the tab you expect, **that means capture isn't enabled there yet** — it is not a broken server. Ask the user to click the mobius-mcp extension icon and enable capture on that tab (capture is opt-in per tab; a settings-page rule can also auto-enable it for a matching host/port, but nothing streams by default).
 2. If multiple tabs are connected, use `set_active_tab` (or pass `tabId` explicitly) to pick the right one before querying — don't guess.
 3. Optionally `clear_logs` before asking the user to reproduce the issue, so the next output is isolated. For a multi-step repro you want fully correlated, prefer `start_debug_session`/`end_debug_session` over manual `clear_logs` + polling.
 4. Use `get_recent_errors` / `get_network_requests` / `get_recent_logs` to inspect what happened, poll `get_logs_since(cursor)` (starting at `cursor: 0`, then passing back the returned cursor each call), or use a `wait_for_*` tool to block until the specific thing you're watching for happens.

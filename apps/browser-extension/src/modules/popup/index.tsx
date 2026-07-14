@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { GearSix, Circle, Play, Pause, Stop, Camera, Code, Trash, ArrowSquareOut, Infinity as InfinityIcon } from "@phosphor-icons/react";
+import { GearSix, Circle, Play, Pause, Stop, Camera, Trash, ArrowSquareOut, Infinity as InfinityIcon } from "@phosphor-icons/react";
 import { useTheme } from "../../hooks/use-theme.js";
 import { usePopupPort } from "../../hooks/use-popup-port.js";
 import type { TabState } from "../../lib/tab-state.js";
+import { getRules, setRules, findMatchingRule, type CaptureRule } from "../../lib/rules.js";
 import { Button } from "../../components/ui/button.js";
 import { Badge } from "../../components/ui/badge.js";
 import { Card, CardContent } from "../../components/ui/card.js";
 import { ScrollArea } from "../../components/ui/scroll-area.js";
 import { Separator } from "../../components/ui/separator.js";
 import { cn } from "../../lib/utils.js";
-import { WS_URL, REPO_URL, STATUS_LABEL, STATUS_DOT, COUNTER_ITEMS, KIND_DOT } from "./data.js";
+import { WS_URL, REPO_URL, STATUS_LABEL, STATUS_DOT, COUNTER_ITEMS, KIND_DOT, KIND_TEXT, KIND_LABEL } from "./data.js";
 
 function formatElapsed(startedAt: number): string {
   const seconds = Math.floor((Date.now() - startedAt) / 1000);
@@ -49,18 +50,22 @@ export function Popup() {
   useTheme();
 
   const [tabId, setTabId] = useState<number | undefined>();
+  const [tabUrl, setTabUrl] = useState<string | undefined>();
   const [host, setHost] = useState<string | undefined>();
   const [state, setState] = useState<TabState | null | undefined>(undefined);
   const [elapsed, setElapsed] = useState<string | undefined>();
+  const [rules, setRulesState] = useState<CaptureRule[]>([]);
 
   useEffect(() => {
     getActiveTab().then(async (tab) => {
       setTabId(tab?.id);
+      setTabUrl(tab?.url);
       setHost(hostOf(tab?.url));
       if (tab?.id === undefined) return;
-      const { state } = await chrome.runtime.sendMessage({ type: "console-stream-mcp/get-state", tabId: tab.id });
+      const { state } = await chrome.runtime.sendMessage({ type: "mobius-mcp/get-state", tabId: tab.id });
       setState(state);
     });
+    getRules().then(setRulesState);
   }, []);
 
   const push = usePopupPort(tabId);
@@ -78,36 +83,46 @@ export function Popup() {
 
   const start = async () => {
     if (tabId === undefined) return;
-    const { state: next } = await chrome.runtime.sendMessage({ type: "console-stream-mcp/toggle", tabId });
+    const { state: next } = await chrome.runtime.sendMessage({ type: "mobius-mcp/toggle", tabId });
     setState(next);
   };
 
   const stop = async () => {
     if (tabId === undefined || !state) return;
-    await chrome.runtime.sendMessage({ type: "console-stream-mcp/toggle", tabId });
+    await chrome.runtime.sendMessage({ type: "mobius-mcp/toggle", tabId });
     setState(null);
   };
 
   const pause = async () => {
     if (tabId === undefined || !state) return;
-    const { state: next } = await chrome.runtime.sendMessage({ type: "console-stream-mcp/set-paused", tabId, paused: !state.paused });
+    const { state: next } = await chrome.runtime.sendMessage({ type: "mobius-mcp/set-paused", tabId, paused: !state.paused });
     setState(next);
   };
 
   const clear = () => {
     if (tabId === undefined) return;
-    chrome.runtime.sendMessage({ type: "console-stream-mcp/clear", tabId });
+    chrome.runtime.sendMessage({ type: "mobius-mcp/clear", tabId });
   };
 
   const runLocalCommand = (command: "take_screenshot" | "capture_dom") => {
     if (tabId === undefined) return;
-    chrome.runtime.sendMessage({ type: "console-stream-mcp/local-command", tabId, command });
+    chrome.runtime.sendMessage({ type: "mobius-mcp/local-command", tabId, command });
+  };
+
+  const addCurrentHostRule = async () => {
+    if (!host) return;
+    const rule: CaptureRule = { id: crypto.randomUUID(), pattern: host };
+    const next = [...(await getRules()), rule];
+    await setRules(next);
+    setRulesState(next);
+    chrome.runtime.openOptionsPage();
   };
 
   const status = push?.connection.status ?? "disconnected";
   const counters = push?.live.counters ?? { console: 0, errors: 0, network: 0, runtime: 0 };
   const feed = push?.live.feed ?? [];
   const capturing = state && !state.paused;
+  const autoEnabled = tabUrl ? Boolean(findMatchingRule(tabUrl, rules)) : true;
 
   return (
     <div className="flex flex-col divide-y divide-border">
@@ -116,18 +131,11 @@ export function Popup() {
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-none", STATUS_DOT[status])} />
           <InfinityIcon size={16} weight="bold" className="text-primary" />
-          <span className="text-sm font-semibold">console-stream-mcp</span>
+          <span className="text-sm font-semibold">Mobius</span>
         </div>
-        <div className="flex items-center gap-2">
+        {/*<div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{STATUS_LABEL[status]}</span>
-          <button
-            onClick={() => chrome.runtime.openOptionsPage()}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Settings"
-          >
-            <GearSix size={16} weight="bold" />
-          </button>
-        </div>
+        </div>*/}
       </div>
 
       {/* current tab */}
@@ -161,7 +169,7 @@ export function Popup() {
             <div key={key} className="flex flex-col items-center gap-1 bg-card px-1 py-2.5">
               <Icon size={14} className={tone} />
               <span className="font-mono text-sm font-semibold tabular-nums">{counters[key]}</span>
-              <span className="text-xxs text-muted-foreground">{label}</span>
+              <span className="text-xs text-muted-foreground">{label}</span>
             </div>
           ))}
         </div>
@@ -172,8 +180,8 @@ export function Popup() {
         <Card size="sm">
           <CardContent className="flex items-center justify-between">
             <div className="min-w-0">
-              <div className="text-xs font-medium text-muted-foreground">MCP server</div>
-              <div className="truncate font-mono text-xs">{WS_URL}</div>
+              <div className="font-medium text-muted-foreground">MCP server</div>
+              <div className="truncate font-mono text-sm">{WS_URL}</div>
             </div>
             <div className="shrink-0 text-right text-xs">
               {status === "connected" ? (
@@ -195,15 +203,23 @@ export function Popup() {
         <ScrollArea className="h-32">
           <ul className="flex flex-col gap-1.5 px-3 py-2">
             {feed.map((item, i) => (
-              <li key={`${item.timestamp}-${i}`} className="flex items-start gap-2 text-xs">
+              <li key={`${item.timestamp}-${i}`} className="flex items-start gap-2 text-xs overflow-x-hidden">
                 <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-none ${KIND_DOT[item.kind]}`} />
                 <span className="shrink-0 font-mono text-muted-foreground">{formatClock(item.timestamp)}</span>
-                <span className="truncate">{item.summary}</span>
+                <span className={`shrink-0 font-mono font-medium ${KIND_TEXT[item.kind]}`}>{KIND_LABEL[item.kind]}</span>
+                <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">{item.summary}</span>
               </li>
             ))}
           </ul>
         </ScrollArea>
       )}
+      <Button
+        variant="muted"
+        onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("logs.html") })}
+        className="mt-1.5 h-auto justify-start p-0 underline-offset-2 hover:underline ml-auto mr-2 text-sm"
+      >
+        View all logs
+      </Button>
 
       {/* controls + quick actions */}
       <div className="flex flex-col gap-2 px-3 py-3">
@@ -235,23 +251,31 @@ export function Popup() {
         )}
         <Separator />
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" size="sm" disabled={!state} onClick={() => runLocalCommand("take_screenshot")}>
-            <Camera size={13} />
+          <Button variant="outline" disabled={!state} onClick={() => runLocalCommand("take_screenshot")}>
+            <Camera />
             Screenshot
           </Button>
-          <Button variant="outline" size="sm" disabled={!state} onClick={() => runLocalCommand("capture_dom")}>
-            <Code size={13} />
-            Capture DOM
+          <Button variant="outline" onClick={() => chrome.runtime.openOptionsPage()}>
+            <GearSix />
+            Options
           </Button>
-          <Button variant="outline" size="sm" onClick={clear}>
-            <Trash size={13} />
+          <Button variant="outline" onClick={clear}>
+            <Trash />
             Clear
           </Button>
-          <Button variant="outline" size="sm" onClick={() => chrome.tabs.create({ url: REPO_URL })}>
-            <ArrowSquareOut size={13} />
+          <Button variant="outline" onClick={() => chrome.tabs.create({ url: REPO_URL })}>
+            <ArrowSquareOut />
             Repo
           </Button>
         </div>
+
+        {state && !state.paused ? <p className="text-center text-sm pt-2 text-muted-foreground">Your agent can now fetch this tab's runtime context via MCP.</p> : null}
+
+        {host && !autoEnabled && (
+          <Button variant="outline" onClick={addCurrentHostRule} className="h-auto justify-start border-dashed py-2 w-[100%]">
+            Want to always capture <span className="font-mono">{host}</span>? Click here to auto-enable this host.
+          </Button>
+        )}
       </div>
     </div>
   );

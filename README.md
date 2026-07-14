@@ -1,4 +1,4 @@
-# console-stream-mcp
+# mobius-mcp
 
 Give AI coding agents (Claude Code, Codex CLI, Gemini CLI, etc.) live access to your web app's runtime — console logs, errors, and network requests — without copy-pasting anything into chat.
 
@@ -15,7 +15,7 @@ WebSocket
   │
 localhost
   │
-console-stream-mcp
+mobius-mcp
   │
 MCP
   │
@@ -30,7 +30,7 @@ A browser client (extension or npm package) captures runtime events — `console
 | --- | --- |
 | `apps/mcp-server` | Node.js MCP server; WebSocket hub + MCP tool implementations |
 | `apps/browser-extension` | Chromium extension that captures and streams browser events |
-| `apps/npm-client` | `console-stream-client` npm package for direct app integration |
+| `apps/npm-client` | `mobius-client` npm package for direct app integration |
 | `packages/protocol` | Versioned event schema and message envelope (private, bundled into published packages) |
 | `packages/capture-core` | Runtime hook patching shared by the extension and npm client (private, bundled) |
 | `skill` | Agent skill describing when/how to use the MCP tools to debug a web app |
@@ -49,9 +49,9 @@ npm run start --workspace=apps/mcp-server
 Then either load the unpacked extension from `apps/browser-extension/dist`, or add the npm client to your app:
 
 ```ts
-import { startConsoleStream } from "console-stream-client";
+import { startMobiusStream } from "mobius-client";
 
-startConsoleStream();
+startMobiusStream();
 ```
 
 Point your MCP-compatible agent at the server (see `apps/mcp-server/README.md` for configuration).
@@ -86,12 +86,12 @@ CDP tools (marked "requires CDP" above) make Chrome show a persistent "being deb
 
 Event ingestion (console/errors/network) is identical across both browser clients — the server can't tell them apart. Command capabilities are not: many later-stage features require Chrome DevTools Protocol access, which only the extension has. The protocol reports this via a `capabilities` field on connect, so commands a client can't support fail with a clear error instead of hanging.
 
-| Capability | Browser extension | npm client (`console-stream-client`) |
+| Capability | Browser extension | npm client (`mobius-client`) |
 | --- | --- | --- |
 | Console/error/network event streaming | ✅ | ✅ |
 | `get_recent_logs` / `get_recent_errors` / `get_network_requests` / `get_logs_since` | ✅ | ✅ |
 | Multi-tab awareness (`get_connected_tabs`, `set_active_tab`) | ✅ | ✅ (one entry per app instance) |
-| Opt-in capture (popup toggle / settings-page rules) | ✅ | n/a — capture starts as soon as `startConsoleStream()` runs |
+| Opt-in capture (popup toggle / settings-page rules) | ✅ | n/a — capture starts as soon as `startMobiusStream()` runs |
 | Navigation control (`navigate_to`, `reload_tab`, `switch_tab`) | ✅ (planned) | ❌ |
 | Debug sessions (`start_debug_session`) | ✅ (planned) | ✅ (planned, event types available to it) |
 | Screenshots, DOM/accessibility snapshots | ✅ (planned, requires CDP) | ❌ |

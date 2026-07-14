@@ -1,4 +1,4 @@
-import type { BrowserEvent } from "@console-stream-mcp/protocol";
+import type { BrowserEvent } from "@mobius-mcp/protocol";
 
 /** Bodies aren't included — they require a separate get_response_body call per
  * request while the tab is still open, since CDP only retains them briefly. */
@@ -29,7 +29,7 @@ export function toHar(events: BrowserEvent[]) {
   return {
     log: {
       version: "1.2",
-      creator: { name: "console-stream-mcp", version: "0.0.1" },
+      creator: { name: "mobius-mcp", version: "0.0.1" },
       entries,
     },
   };

@@ -1,11 +1,11 @@
 {
-  "name": "console-stream-mcp",
+  "name": "mobius-mcp",
   "version": "0.0.1",
   "description": "MCP server exposing live browser runtime events to AI coding agents",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "console-stream-mcp": "dist/index.js"
+    "mobius-mcp": "dist/index.js"
   },
   "main": "dist/index.js",
   "files": ["dist"],
@@ -15,7 +15,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@console-stream-mcp/protocol": "0.0.1",
+    "@mobius-mcp/protocol": "0.0.1",
     "@types/ws": "^8.5.12",
     "tsup": "^8.3.0"
   },

@@ -1,8 +1,8 @@
-# Project: console-stream-mcp
+# Project: mobius-mcp
 
 ## Overview
 
-Build an open source MCP server called **console-stream-mcp**.
+Build an open source MCP server called **mobius-mcp**.
 
 Its purpose is to give AI coding agents (Claude Code, Codex CLI, Gemini CLI, etc.) live access to a web application's runtime so they can debug issues without requiring the developer to manually copy and paste console logs or browser errors, there should be an accompanying skill that lets the agents know when to use the mcp.
 
@@ -43,7 +43,7 @@ The project consists of three parts:
 ## Repository Structure
 
 ```text
-console-stream-mcp/
+mobius-mcp/
 ├── apps/
 │   ├── mcp-server/
 │   ├── browser-extension/
@@ -82,9 +82,9 @@ Provide an installable package.
 Example usage:
 
 ```ts
-import { startConsoleStream } from "console-stream-client";
+import { startMobiusStream } from "mobius-client";
 
-startConsoleStream();
+startMobiusStream();
 ```
 
 This package should capture the same events as the extension and send them using the exact same protocol.
@@ -104,7 +104,7 @@ WebSocket
       │
 localhost
       │
-console-stream-mcp
+mobius-mcp
       │
 MCP
       │

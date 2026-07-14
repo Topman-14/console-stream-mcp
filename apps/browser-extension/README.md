@@ -1,6 +1,6 @@
-# @console-stream-mcp/browser-extension
+# @mobius-mcp/browser-extension
 
-Chromium extension that captures browser runtime events (console output, errors, network requests) and streams them to a local `console-stream-mcp` server over WebSocket — no application changes required.
+Chromium extension that captures browser runtime events (console output, errors, network requests) and streams them to a local `mobius-mcp` server over WebSocket — no application changes required.
 
 ## Load unpacked (dev)
 

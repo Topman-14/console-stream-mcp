@@ -1,5 +1,5 @@
 {
-  "name": "console-stream-mcp",
+  "name": "mobius-mcp",
   "private": true,
   "description": "Give AI coding agents live access to your web app's runtime via MCP.",
   "license": "MIT",

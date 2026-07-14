@@ -1,5 +1,5 @@
-import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "@console-stream-mcp/protocol";
-import type { CapturedEvent } from "@console-stream-mcp/capture-core";
+import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "@mobius-mcp/protocol";
+import type { CapturedEvent } from "@mobius-mcp/capture-core";
 import { findMatchingRule, getRules } from "./lib/rules.js";
 import { getTabState, setTabState, setPaused, clearTabState, getTabIdForClient, type TabState } from "./lib/tab-state.js";
 import { sendCdp, detach, findRequestId } from "./lib/cdp.js";
@@ -11,6 +11,7 @@ import {
   clearTabLiveState,
   clearAllTabLiveState,
   registerPort,
+  registerAllPort,
   getAllLiveState,
   connectionStatus,
   lastEventAt,
@@ -31,7 +32,7 @@ const NOTIFICATION_ICON =
   );
 
 function debugLog(...args: unknown[]) {
-  if (verboseLogs) console.debug("[console-stream-mcp]", ...args);
+  if (verboseLogs) console.debug("[mobius-mcp]", ...args);
 }
 
 function send(message: ClientMessage) {
@@ -51,7 +52,7 @@ async function connect() {
   ws.addEventListener("open", () => {
     retryDelay = mcp.reconnectBaseDelayMs;
     setConnectionStatus("connected");
-    debugLog("connected to mcp server", mcp.port);
+    console.error(`[mobius-mcp] connected to mcp server on ws://localhost:${mcp.port}`);
     while (queue.length > 0) {
       ws!.send(JSON.stringify(queue.shift()!));
     }
@@ -59,12 +60,15 @@ async function connect() {
 
   ws.addEventListener("close", () => {
     setConnectionStatus("disconnected");
-    debugLog("disconnected from mcp server, retrying in", retryDelay, "ms");
+    console.error(`[mobius-mcp] disconnected from mcp server (ws://localhost:${mcp.port}), retrying in ${retryDelay}ms`);
     setTimeout(connect, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 10_000);
   });
 
-  ws.addEventListener("error", () => ws?.close());
+  ws.addEventListener("error", (event) => {
+    console.error(`[mobius-mcp] websocket error on ws://localhost:${mcp.port}`, event);
+    ws?.close();
+  });
 
   ws.addEventListener("message", async (evt) => {
     let message: ServerMessage;
@@ -125,16 +129,16 @@ async function runCommand(message: ServerMessage): Promise<unknown> {
       return { reloaded: true };
     }
     case "start_dom_capture": {
-      await chrome.tabs.sendMessage(tabId, { type: "console-stream-mcp/command", command: "start-dom" });
+      await chrome.tabs.sendMessage(tabId, { type: "mobius-mcp/command", command: "start-dom" });
       return { started: true };
     }
     case "stop_dom_capture": {
-      await chrome.tabs.sendMessage(tabId, { type: "console-stream-mcp/command", command: "stop-dom" });
+      await chrome.tabs.sendMessage(tabId, { type: "mobius-mcp/command", command: "stop-dom" });
       return { stopped: true };
     }
     case "wait_for_element": {
       const { selector, timeoutMs } = message.params as { selector: string; timeoutMs: number };
-      return chrome.tabs.sendMessage(tabId, { type: "console-stream-mcp/wait-for-element", selector, timeoutMs });
+      return chrome.tabs.sendMessage(tabId, { type: "mobius-mcp/wait-for-element", selector, timeoutMs });
     }
 
     // --- CDP-backed (chrome.debugger), Stage D ---
@@ -238,8 +242,8 @@ async function enableTab(tabId: number, mode: TabState["mode"]): Promise<string 
   const clientId = crypto.randomUUID();
   await setTabState(tabId, { clientId, mode });
 
-  await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content-script.js"] });
-  await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["src/injected.js"] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content-script.js"], injectImmediately: true });
+  await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["src/injected.js"], injectImmediately: true });
 
   send({
     version: PROTOCOL_VERSION,
@@ -247,8 +251,8 @@ async function enableTab(tabId: number, mode: TabState["mode"]): Promise<string 
     client: { clientId, clientType: "extension", pageUrl: tab.url, title: tab.title, capabilities: ["cdp"] },
   });
 
-  debugLog("enabled tab", tabId, mode);
-  startRecording(tabId);
+  console.error(`[mobius-mcp] enabled tab ${tabId} (${mode}): ${tab.url}`);
+  await startRecording(tabId);
 
   return clientId;
 }
@@ -259,10 +263,10 @@ async function disableTab(tabId: number): Promise<void> {
 
   send({ version: PROTOCOL_VERSION, kind: "bye", clientId: state.clientId });
   await clearTabState(tabId);
-  stopRecording(tabId);
+  await stopRecording(tabId);
 
   try {
-    await chrome.tabs.sendMessage(tabId, { type: "console-stream-mcp/command", command: "stop" });
+    await chrome.tabs.sendMessage(tabId, { type: "mobius-mcp/command", command: "stop" });
   } catch {
     // tab may already be closed/navigated away; nothing to clean up in-page
   }
@@ -280,18 +284,18 @@ async function runLocalCommand(tabId: number, command: string): Promise<unknown>
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "console-stream-mcp/event" && sender.tab?.id !== undefined) {
+  if (message?.type === "mobius-mcp/event" && sender.tab?.id !== undefined) {
     const tabId = sender.tab.id;
-    getTabState(tabId).then((state) => {
+    getTabState(tabId).then(async (state) => {
       if (!state || state.paused) return;
       const event: CapturedEvent = { ...message.event, metadata: { ...message.event.metadata, tabId } };
       send({ version: PROTOCOL_VERSION, kind: "event", clientId: state.clientId, event });
-      const bucket = recordEvent(tabId, event);
+      const bucket = await recordEvent(tabId, event);
       if (bucket === "errors" && notificationsEnabled) {
         chrome.notifications.create({
           type: "basic",
           iconUrl: NOTIFICATION_ICON,
-          title: "console-stream-mcp",
+          title: "mobius-mcp",
           message: "message" in event ? event.message : "reason" in event ? event.reason : "Runtime error captured",
         });
       }
@@ -299,12 +303,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (message?.type === "console-stream-mcp/get-state") {
+  if (message?.type === "mobius-mcp/get-state") {
     getTabState(message.tabId).then((state) => sendResponse({ state: state ?? null }));
     return true;
   }
 
-  if (message?.type === "console-stream-mcp/toggle") {
+  if (message?.type === "mobius-mcp/toggle") {
     getTabState(message.tabId).then(async (state) => {
       if (state) {
         await disableTab(message.tabId);
@@ -317,39 +321,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "console-stream-mcp/set-paused") {
+  if (message?.type === "mobius-mcp/set-paused") {
     setPaused(message.tabId, message.paused).then((state) => sendResponse({ state: state ?? null }));
     return true;
   }
 
-  if (message?.type === "console-stream-mcp/clear") {
-    clearTabLiveState(message.tabId);
-    sendResponse({ cleared: true });
+  if (message?.type === "mobius-mcp/clear") {
+    clearTabLiveState(message.tabId).then(() => sendResponse({ cleared: true }));
     return true;
   }
 
-  if (message?.type === "console-stream-mcp/local-command") {
+  if (message?.type === "mobius-mcp/local-command") {
     runLocalCommand(message.tabId, message.command)
       .then((result) => sendResponse({ result }))
       .catch((err) => sendResponse({ error: err instanceof Error ? err.message : String(err) }));
     return true;
   }
 
-  if (message?.type === "console-stream-mcp/export-diagnostics") {
-    const diagnostics = {
-      exportedAt: new Date().toISOString(),
-      connection: { status: connectionStatus, lastEventAt },
-      queuedMessages: queue.length,
-      tabs: getAllLiveState(),
-    };
-    const url = "data:application/json," + encodeURIComponent(JSON.stringify(diagnostics, null, 2));
-    chrome.downloads.download({ url, filename: `console-stream-mcp-diagnostics-${Date.now()}.json` }, () => sendResponse({ downloaded: true }));
+  if (message?.type === "mobius-mcp/export-diagnostics") {
+    getAllLiveState().then((tabs) => {
+      const diagnostics = {
+        exportedAt: new Date().toISOString(),
+        connection: { status: connectionStatus, lastEventAt },
+        queuedMessages: queue.length,
+        tabs,
+      };
+      const url = "data:application/json," + encodeURIComponent(JSON.stringify(diagnostics, null, 2));
+      chrome.downloads.download({ url, filename: `mobius-mcp-diagnostics-${Date.now()}.json` }, () => sendResponse({ downloaded: true }));
+    });
     return true;
   }
 });
 
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== "console-stream-mcp/popup") return;
+  if (port.name === "mobius-mcp/logs") {
+    console.error("[mobius-mcp] logs page connected");
+    registerAllPort(port);
+    port.onDisconnect.addListener(() => console.error("[mobius-mcp] logs page disconnected"));
+    return;
+  }
+
+  if (port.name !== "mobius-mcp/popup") return;
   port.onMessage.addListener((message) => {
     if (message?.type === "subscribe" && typeof message.tabId === "number") {
       registerPort(port, message.tabId);

@@ -1,15 +1,15 @@
 {
-  "name": "console-stream-client",
+  "name": "mobius-client",
   "version": "0.0.1",
-  "description": "Drop-in client that streams browser runtime events to a local console-stream-mcp server",
+  "description": "Drop-in client that streams browser runtime events to a local mobius-mcp server",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
   "devDependencies": {
-    "@console-stream-mcp/capture-core": "0.0.1",
-    "@console-stream-mcp/protocol": "0.0.1",
+    "@mobius-mcp/capture-core": "0.0.1",
+    "@mobius-mcp/protocol": "0.0.1",
     "tsup": "^8.3.0"
   },
   "scripts": {

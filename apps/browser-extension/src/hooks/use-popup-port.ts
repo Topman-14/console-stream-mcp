@@ -25,7 +25,7 @@ export function usePopupPort(tabId: number | undefined): PushState | null {
 
   useEffect(() => {
     if (tabId === undefined) return;
-    const port = chrome.runtime.connect({ name: "console-stream-mcp/popup" });
+    const port = chrome.runtime.connect({ name: "mobius-mcp/popup" });
     port.onMessage.addListener((message: PushState) => setState(message));
     port.postMessage({ type: "subscribe", tabId });
     return () => port.disconnect();

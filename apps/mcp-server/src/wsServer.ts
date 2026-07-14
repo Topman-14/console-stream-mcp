@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import { PROTOCOL_VERSION, isProtocolVersionSupported, type ClientMessage } from "@console-stream-mcp/protocol";
+import { PROTOCOL_VERSION, isProtocolVersionSupported, type ClientMessage } from "@mobius-mcp/protocol";
 import type { EventStore } from "./store.js";
 import type { ClientRegistry } from "./registry.js";
 import type { CommandDispatcher } from "./commandDispatcher.js";
@@ -8,8 +8,17 @@ import type { CommandDispatcher } from "./commandDispatcher.js";
 export function startWsServer(port: number, store: EventStore, registry: ClientRegistry, dispatcher: CommandDispatcher): WebSocketServer {
   const wss = new WebSocketServer({ host: "localhost", port });
 
+  wss.on("listening", () => {
+    console.error(`[mobius-mcp] WebSocket server listening on ws://localhost:${port}`);
+  });
+
+  wss.on("error", (err) => {
+    console.error(`[mobius-mcp] WebSocket server error:`, err);
+  });
+
   wss.on("connection", (ws: WebSocket) => {
     const clientIds = new Set<string>();
+    console.error("[mobius-mcp] client connected");
 
     ws.on("message", (raw) => {
       let message: ClientMessage;
@@ -48,6 +57,7 @@ export function startWsServer(port: number, store: EventStore, registry: ClientR
     });
 
     ws.on("close", () => {
+      console.error("[mobius-mcp] client disconnected");
       for (const clientId of clientIds) {
         registry.markDisconnected(clientId);
       }

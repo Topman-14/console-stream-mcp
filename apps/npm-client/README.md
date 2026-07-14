@@ -1,11 +1,11 @@
-# console-stream-client
+# mobius-client
 
-Installable npm package that streams browser runtime events to a local `console-stream-mcp` server.
+Installable npm package that streams browser runtime events to a local `mobius-mcp` server.
 
 ```ts
-import { startConsoleStream } from "console-stream-client";
+import { startMobiusStream } from "mobius-client";
 
-startConsoleStream();
+startMobiusStream();
 ```
 
 ## Status

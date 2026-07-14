@@ -1,11 +1,11 @@
-import { startCapture } from "@console-stream-mcp/capture-core";
-import { PROTOCOL_VERSION, type ClientMessage } from "@console-stream-mcp/protocol";
+import { startCapture } from "@mobius-mcp/capture-core";
+import { PROTOCOL_VERSION, type ClientMessage } from "@mobius-mcp/protocol";
 
-export interface StartConsoleStreamOptions {
+export interface StartMobiusStreamOptions {
   port?: number;
 }
 
-export function startConsoleStream(options: StartConsoleStreamOptions = {}): () => void {
+export function startMobiusStream(options: StartMobiusStreamOptions = {}): () => void {
   const port = options.port ?? 7331;
   const clientId = crypto.randomUUID();
   let ws: WebSocket | null = null;

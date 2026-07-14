@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import type { EventType } from "@console-stream-mcp/protocol";
+import type { EventType } from "@mobius-mcp/protocol";
 import type { EventStore } from "./store.js";
 import type { ClientRegistry } from "./registry.js";
 import type { CommandDispatcher } from "./commandDispatcher.js";
@@ -26,7 +26,7 @@ export function createMcpServer(
   jobs: JobManager,
   debugSessions: DebugSessionManager,
 ): McpServer {
-  const server = new McpServer({ name: "console-stream-mcp", version: "0.0.1" });
+  const server = new McpServer({ name: "mobius-mcp", version: "0.0.1" });
 
   let activeTabId: string | undefined;
 
@@ -37,7 +37,7 @@ export function createMcpServer(
 
     const connected = registry.list();
     if (connected.length === 0) {
-      return { error: toolError("No tabs connected. Ask the user to click the console-stream-mcp extension icon and enable capture on the tab they want debugged.") };
+      return { error: toolError("No tabs connected. Ask the user to click the mobius-mcp extension icon and enable capture on the tab they want debugged.") };
     }
     if (activeTabId && connected.some((c) => c.clientId === activeTabId)) {
       return { clientId: activeTabId };
@@ -172,7 +172,7 @@ export function createMcpServer(
     async () => {
       const extensionClient = registry.list().find((c) => c.capabilities.includes("cdp"));
       if (!extensionClient) {
-        return toolError("No extension connected. list_tabs requires the console-stream-mcp extension to be enabled on at least one tab.");
+        return toolError("No extension connected. list_tabs requires the mobius-mcp extension to be enabled on at least one tab.");
       }
       try {
         return toolResult(await dispatcher.sendCommand(extensionClient.clientId, "list_tabs", {}));

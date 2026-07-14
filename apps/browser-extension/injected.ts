@@ -1,6 +1,6 @@
-import { startCapture, patchDomMutations, type CapturedEvent, type CaptureStartOptions } from "@console-stream-mcp/capture-core";
+import { startCapture, patchDomMutations, type CapturedEvent, type CaptureStartOptions } from "@mobius-mcp/capture-core";
 
-const MESSAGE_SOURCE = "console-stream-mcp";
+const MESSAGE_SOURCE = "mobius-mcp";
 
 let stopCapture: (() => void) | null = null;
 let stopDom: (() => void) | null = null;
