@@ -24,20 +24,21 @@ export const CAPTURE_ROWS: Array<{ key: keyof CaptureOptions; label: string; des
   { key: "dom", label: "DOM mutations", description: "Can be noisy on busy pages; turn off if the feed gets flooded" },
 ];
 
-export const PRIVACY_ROWS: Array<{ key: keyof PrivacyOptions; label: string; description: string }> = [
-  { key: "redactHeaders", label: "Redact sensitive headers", description: "Authorization, Cookie, Set-Cookie, X-Api-Key values" },
-  { key: "redactCookies", label: "Redact cookie headers", description: "Same as above, listed separately since it's the common ask" },
+export const PRIVACY_ROWS: Array<{ key: Exclude<keyof PrivacyOptions, "redactedHeaderNames">; label: string; description: string }> = [
   { key: "maskEmails", label: "Mask email addresses", description: "In console messages, errors, and captured text" },
   { key: "maskJwts", label: "Mask JWTs", description: "Any three-segment token pattern in captured text" },
+  { key: "redactSensitiveBodyFields", label: "Redact sensitive body fields", description: "Masks password/token/secret/apiKey-like JSON fields in captured request/response bodies" },
 ];
 
-export const EXPERIMENTAL_ROWS: Array<{ label: string; description: string }> = [
-  { label: "React integration", description: "Detect component tree updates via React DevTools hook" },
-  { label: "Redux integration", description: "Capture dispatched actions and state diffs" },
-  { label: "Zustand integration", description: "Capture store updates" },
-  { label: "TanStack Query integration", description: "Capture query and mutation lifecycle events" },
-  { label: "Accessibility tree capture", description: "Snapshot the accessibility tree alongside DOM captures" },
-];
+// Not implemented yet — see ROADMAP.md "Beyond this plan" for tracking. Commented out
+// instead of deleted so whoever builds these can find the intended copy.
+// export const EXPERIMENTAL_ROWS: Array<{ label: string; description: string }> = [
+//   { label: "React integration", description: "Detect component tree updates via React DevTools hook" },
+//   { label: "Redux integration", description: "Capture dispatched actions and state diffs" },
+//   { label: "Zustand integration", description: "Capture store updates" },
+//   { label: "TanStack Query integration", description: "Capture query and mutation lifecycle events" },
+//   { label: "Accessibility tree capture", description: "Snapshot the accessibility tree alongside DOM captures" },
+// ];
 
 export const ABOUT_LINKS = [
   { label: "GitHub repository", url: REPO_URL },

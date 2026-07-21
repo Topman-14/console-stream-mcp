@@ -16,7 +16,9 @@ This is an npm workspaces monorepo:
 * `apps/browser-extension` — Chromium extension client
 * `apps/npm-client` — `mobius-client` npm package
 * `packages/protocol` — shared event/message schema
-* `packages/shared-types` — shared TypeScript types
+* `packages/capture-core` — shared runtime hook patching (console, errors, network)
+
+For active development, `npm run watch` runs incremental watchers for the shared packages and the extension together (with automatic reload in Chrome) — see [README.md](./README.md#watch-mode) for details.
 
 ## Guidelines
 

@@ -4,7 +4,7 @@ import type { BrowserEvent, EventType } from "@mobius-mcp/protocol";
 const MAX_EVENTS_PER_TAB = Number(process.env.CONSOLE_STREAM_MAX_EVENTS_PER_TAB) || 1000;
 const MAX_FIELD_LENGTH = 10_000;
 
-const TRUNCATABLE_FIELDS = ["message", "stack", "reason"] as const;
+const TRUNCATABLE_FIELDS = ["message", "stack", "reason", "requestBody", "responseBody"] as const;
 
 function truncateFields(event: BrowserEvent): BrowserEvent {
   const result: Record<string, unknown> = { ...event };

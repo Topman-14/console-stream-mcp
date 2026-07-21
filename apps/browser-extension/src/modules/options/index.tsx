@@ -10,7 +10,7 @@ import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
 import { Separator } from "../../components/ui/separator.js";
 import { cn } from "../../lib/utils.js";
-import { COMING_SOON, THEME_OPTIONS, CAPTURE_ROWS, PRIVACY_ROWS, EXPERIMENTAL_ROWS, ABOUT_LINKS, QUICK_PATTERNS } from "./data.js";
+import { THEME_OPTIONS, CAPTURE_ROWS, PRIVACY_ROWS, ABOUT_LINKS, QUICK_PATTERNS } from "./data.js";
 import { DownloadIcon, PlusIcon, TrashIcon, ArrowSquareOutIcon, InfinityIcon } from "@phosphor-icons/react";
 
 export function Options() {
@@ -25,6 +25,7 @@ export function Options() {
 
   const [rules, setRulesState] = useState<CaptureRule[]>([]);
   const [pattern, setPattern] = useState("");
+  const [headerInput, setHeaderInput] = useState("");
   const [permissionErrors, setPermissionErrors] = useState<Record<string, boolean>>({});
   const [grantedOrigins, setGrantedOrigins] = useState<Record<string, boolean>>({});
   const refreshRules = () => getRules().then(setRulesState);
@@ -41,6 +42,17 @@ export function Options() {
 
   const updateCapture = (key: keyof CaptureOptions, value: boolean) => updateCaptureOptions({ [key]: value } as Partial<CaptureOptions>);
   const updatePrivacy = (key: keyof PrivacyOptions, value: boolean) => updatePrivacyOptions({ [key]: value } as Partial<PrivacyOptions>);
+
+  const addRedactedHeader = (value: string) => {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed || !privacyOptions || privacyOptions.redactedHeaderNames.includes(trimmed)) return;
+    updatePrivacyOptions({ redactedHeaderNames: [...privacyOptions.redactedHeaderNames, trimmed] });
+  };
+
+  const removeRedactedHeader = (name: string) => {
+    if (!privacyOptions) return;
+    updatePrivacyOptions({ redactedHeaderNames: privacyOptions.redactedHeaderNames.filter((h) => h !== name) });
+  };
 
   const exportDiagnostics = async () => {
     setExporting(true);
@@ -124,9 +136,8 @@ export function Options() {
               {CAPTURE_ROWS.map(({ key, label, description }) => (
                 <SettingRow key={key} label={label} description={description} checked={captureOptions[key]} onCheckedChange={(v) => updateCapture(key, v)} />
               ))}
-              {/*TODO: implement these*/}
-              <SettingRow label="Performance metrics" description="Requires a performance capture hook, not built yet" checked={false} onCheckedChange={() => {}} disabled badge={COMING_SOON} />
-              <SettingRow label="Storage changes" description="Requires a storage capture hook, not built yet" checked={false} onCheckedChange={() => {}} disabled badge={COMING_SOON} />
+              {/* Not implemented yet — see ROADMAP.md "Beyond this plan". */}
+              {/* <SettingRow label="Performance metrics" description="Requires a performance capture hook, not built yet" checked={false} onCheckedChange={() => {}} disabled badge={COMING_SOON} /> */}
             </div>
           )}
         </section>
@@ -205,11 +216,47 @@ export function Options() {
           <h2 className="font-semibold text-xl">Privacy</h2>
           <Separator className="mt-2" />
           {privacyOptions && (
-            <div className="flex flex-col divide-y divide-border">
-              {PRIVACY_ROWS.map(({ key, label, description }) => (
-                <SettingRow key={key} label={label} description={description} checked={privacyOptions[key]} onCheckedChange={(v) => updatePrivacy(key, v)} />
-              ))}
-              <SettingRow label="Redact localStorage" description="Requires a storage capture hook, not built yet" checked={false} onCheckedChange={() => {}} disabled badge={COMING_SOON} />
+            <div className="flex flex-col gap-4 py-2.5">
+              <div>
+                <div className="mb-2 font-medium">Redacted headers</div>
+                <p className="mb-2 text-sm text-muted-foreground">Header values captured with these names (case-insensitive) are replaced with <code className="rounded bg-muted px-1 py-0.5 font-mono">[redacted]</code>, in both request and response headers.</p>
+                <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+                  {privacyOptions.redactedHeaderNames.length === 0 && <li className="px-3 py-4 text-center text-sm text-muted-foreground">No headers redacted</li>}
+                  {privacyOptions.redactedHeaderNames.map((name) => (
+                    <li key={name} className="flex items-center justify-between px-3 py-2">
+                      <span className="font-mono text-sm">{name}</span>
+                      <Button variant="ghost" size="icon-sm" onClick={() => removeRedactedHeader(name)} className="hover:text-destructive" aria-label={`Remove ${name}`}>
+                        <TrashIcon size={13} />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 flex gap-2">
+                  <Input
+                    placeholder="x-my-header"
+                    value={headerInput}
+                    onChange={(e) => setHeaderInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      addRedactedHeader(headerInput);
+                      setHeaderInput("");
+                    }}
+                  />
+                  <Button
+                    onClick={() => {
+                      addRedactedHeader(headerInput);
+                      setHeaderInput("");
+                    }}
+                  >
+                    <PlusIcon size={16} weight="bold" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-col divide-y divide-border">
+                {PRIVACY_ROWS.map(({ key, label, description }) => (
+                  <SettingRow key={key} label={label} description={description} checked={privacyOptions[key]} onCheckedChange={(v) => updatePrivacy(key, v)} />
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -303,7 +350,8 @@ export function Options() {
           )}
         </section>
 
-        {/* Experimental */}
+        {/* Experimental — not implemented yet, see ROADMAP.md "Beyond this plan". Commented
+            out instead of deleted so it's easy to find and re-enable once something here ships.
         <section>
           <h2 className="font-semibold text-xl">Experimental</h2>
           <Separator className="mt-2" />
@@ -313,6 +361,7 @@ export function Options() {
             ))}
           </div>
         </section>
+        */}
 
         {/* About */}
         <section>

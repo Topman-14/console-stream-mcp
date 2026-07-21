@@ -32,6 +32,7 @@
   },
   "scripts": {
     "build": "vite build && node scripts/build-content-scripts.mjs",
-    "dev": "vite"
+    "dev": "vite",
+    "watch": "concurrently -n vite,content-scripts -c blue,green \"vite\" \"node scripts/build-content-scripts.mjs --watch\""
   }
 }

@@ -33,9 +33,18 @@ export interface NetworkEvent extends EventBase {
   method: string;
   requestUrl: string;
   status?: number;
+  statusText?: string;
   durationMs?: number;
   error?: string;
   requestHeaders?: Record<string, string>;
+  responseHeaders?: Record<string, string>;
+  mimeType?: string;
+  requestBody?: string;
+  requestBodyTruncated?: boolean;
+  requestBodyOmittedReason?: string;
+  responseBody?: string;
+  responseBodyTruncated?: boolean;
+  responseBodyOmittedReason?: string;
 }
 
 export interface NavigationEvent extends EventBase {

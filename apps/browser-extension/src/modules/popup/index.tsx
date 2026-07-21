@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { GearSix, Circle, Play, Pause, Stop, Bug, Trash, ArrowSquareOut, Infinity as InfinityIcon } from "@phosphor-icons/react";
 import { useTheme } from "../../hooks/use-theme.js";
 import { usePopupPort } from "../../hooks/use-popup-port.js";
+import { useSyncedSetting } from "../../hooks/use-setting.js";
+import { captureOptionsSetting } from "../../lib/capture-options.js";
 import type { TabState } from "../../lib/tab-state.js";
 import { getRules, setRules, findMatchingRule, ruleToOrigin, type CaptureRule } from "../../lib/rules.js";
 import { requestOrigin } from "../../lib/host-permissions.js";
@@ -60,6 +62,7 @@ export function Popup() {
   const [rules, setRulesState] = useState<CaptureRule[]>([]);
   const [ruleJustAdded, setRuleJustAdded] = useState(false);
   const [ruleDenied, setRuleDenied] = useState(false);
+  const [captureOptions] = useSyncedSetting(captureOptionsSetting);
 
   useEffect(() => {
     getActiveTab().then(async (tab) => {
@@ -175,18 +178,27 @@ export function Popup() {
         )}
       </div>
 
-      {/* event counters */}
-      <div className="px-3 py-3">
-        <div className="grid grid-cols-4 gap-px overflow-hidden rounded-lg border border-border bg-border">
-          {COUNTER_ITEMS.map(({ key, label, icon: Icon, tone }) => (
-            <div key={key} className="flex flex-col items-center gap-1 bg-card px-1 py-2.5">
-              <Icon size={14} className={tone} />
-              <span className="font-mono text-sm font-semibold tabular-nums">{counters[key]}</span>
-              <span className="text-xs text-muted-foreground">{label}</span>
-            </div>
-          ))}
+      {/* event counters — hidden until the MCP server is actually running, nothing to show yet */}
+      {!mcpDown && (
+        <div className="px-3 py-3">
+          <div className="grid grid-cols-4 gap-px overflow-hidden rounded-lg border border-border bg-border">
+            {COUNTER_ITEMS.map(({ key, label, icon: Icon, tone, settingsKey }) => {
+              const paused = captureOptions ? captureOptions[settingsKey] === false : false;
+              return (
+                <div key={key} className="flex flex-col items-center gap-1 bg-card px-1 py-2.5">
+                  <Icon size={14} className={tone} />
+                  {paused ? (
+                    <span className="text-sm font-semibold text-destructive">Paused</span>
+                  ) : (
+                    <span className="font-mono text-sm font-semibold tabular-nums">{counters[key]}</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">{label}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* mcp status */}
       <div className="px-3 py-2.5">
@@ -209,30 +221,34 @@ export function Popup() {
         </Card>
       </div>
 
-      {/* live feed */}
-      {feed.length === 0 ? (
-        <div className="px-3 py-6 text-center text-xs text-muted-foreground">No events yet</div>
-      ) : (
-        <ScrollArea className="h-32">
-          <ul className="flex flex-col gap-1.5 px-3 py-2">
-            {feed.map((item, i) => (
-              <li key={`${item.timestamp}-${i}`} className="flex items-start gap-2 text-xs overflow-x-hidden">
-                <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-none ${KIND_DOT[item.kind]}`} />
-                <span className="shrink-0 font-mono text-muted-foreground">{formatClock(item.timestamp)}</span>
-                <span className={`shrink-0 font-mono font-medium ${KIND_TEXT[item.kind]}`}>{KIND_LABEL[item.kind]}</span>
-                <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">{item.summary}</span>
-              </li>
-            ))}
-          </ul>
-        </ScrollArea>
+      {/* live feed — hidden until the MCP server is actually running, nothing to show yet */}
+      {!mcpDown && (
+        <>
+          {feed.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">No events yet</div>
+          ) : (
+            <ScrollArea className="h-32">
+              <ul className="flex flex-col gap-1.5 px-3 py-2">
+                {feed.map((item, i) => (
+                  <li key={`${item.timestamp}-${i}`} className="flex items-start gap-2 text-xs overflow-x-hidden">
+                    <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-none ${KIND_DOT[item.kind]}`} />
+                    <span className="shrink-0 font-mono text-muted-foreground">{formatClock(item.timestamp)}</span>
+                    <span className={`shrink-0 font-mono font-medium ${KIND_TEXT[item.kind]}`}>{KIND_LABEL[item.kind]}</span>
+                    <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">{item.summary}</span>
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          )}
+          <Button
+            variant="muted"
+            onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("logs.html") })}
+            className="mt-1.5 h-auto justify-start p-0 underline-offset-2 hover:underline ml-auto mr-2 text-sm"
+          >
+            View all logs
+          </Button>
+        </>
       )}
-      <Button
-        variant="muted"
-        onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("logs.html") })}
-        className="mt-1.5 h-auto justify-start p-0 underline-offset-2 hover:underline ml-auto mr-2 text-sm"
-      >
-        View all logs
-      </Button>
 
       {/* controls + quick actions */}
       <div className="flex flex-col gap-2 px-3 py-3">

@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "build": "npm run build -w packages/protocol -w packages/capture-core -w apps/mcp-server -w apps/npm-client -w apps/browser-extension",
+    "watch": "npm run build -w packages/protocol -w packages/capture-core && concurrently -n packages,extension -c yellow,magenta \"tsc -b packages/protocol packages/capture-core --watch --preserveWatchOutput\" \"npm run watch -w apps/browser-extension\"",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },
@@ -21,6 +22,7 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "concurrently": "^10.0.3",
     "typescript": "^5.6.0"
   }
 }

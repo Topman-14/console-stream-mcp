@@ -8,11 +8,10 @@ export interface CaptureOptions {
 }
 
 export interface PrivacyOptions {
-  redactHeaders: boolean;
-  redactCookies: boolean;
-  redactLocalStorage: boolean;
+  redactedHeaderNames: string[];
   maskEmails: boolean;
   maskJwts: boolean;
+  redactSensitiveBodyFields: boolean;
 }
 
 export const DEFAULT_CAPTURE_OPTIONS: CaptureOptions = {
@@ -22,12 +21,13 @@ export const DEFAULT_CAPTURE_OPTIONS: CaptureOptions = {
   dom: true,
 };
 
+export const DEFAULT_REDACTED_HEADER_NAMES = ["authorization", "cookie", "set-cookie", "x-api-key"];
+
 export const DEFAULT_PRIVACY_OPTIONS: PrivacyOptions = {
-  redactHeaders: true,
-  redactCookies: true,
-  redactLocalStorage: false,
+  redactedHeaderNames: DEFAULT_REDACTED_HEADER_NAMES,
   maskEmails: false,
   maskJwts: true,
+  redactSensitiveBodyFields: true,
 };
 
 export const captureOptionsSetting = defineSetting("captureOptions", DEFAULT_CAPTURE_OPTIONS);

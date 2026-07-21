@@ -41,10 +41,10 @@ Install the chromium extension [here](https://chromewebstore.google.com/detail/b
 | --- | --- |
 | `apps/mcp-server` | Node.js MCP server; WebSocket hub + MCP tool implementations |
 | `apps/browser-extension` | Chromium extension that captures and streams browser events |
-| `apps/npm-client` | `mobius-client` npm package for direct app integration |
+| `apps/npm-client` | `mobius-client` npm package for direct app integration — **paused**, see [ROADMAP.md](./ROADMAP.md) |
 | `packages/protocol` | Versioned event schema and message envelope (private, bundled into published packages) |
 | `packages/capture-core` | Runtime hook patching shared by the extension and npm client (private, bundled) |
-| `skill` | Agent skill describing when/how to use the MCP tools to debug a web app |
+| `skills` | Six scenario-focused agent skills for specific bug classes (dead clicks, silent 200s, contract drift, perf, session drift, bug documentation) — see below |
 | `examples` | Example apps demonstrating integration |
 
 ## Quick start
@@ -70,7 +70,13 @@ Install the chromium extension [here](https://chromewebstore.google.com/detail/b
    }
    ```
 
-2. **Stream your app's runtime into it**, either via the browser extension (load unpacked from `apps/browser-extension/dist`, see below), or by dropping the npm client into your app:
+2. **Stream your app's runtime into it.** Pick one:
+
+   **Option A — browser extension (recommended).** Full capability: everything in Option B, plus browser control, screenshots, DOM/accessibility capture, CPU/memory profiling, and `evaluate_js` (all require Chrome DevTools Protocol, extension-only — see [Client capabilities](#client-capabilities)).
+
+   [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/bdhnfoelpknephokgkldjopdggkakdop?utm_source=item-share-cb), or load unpacked from `apps/browser-extension/dist` (see "Developing this repo locally" below). Click the toolbar icon and hit "Enable tab" on the tab you want to debug — capture is opt-in per tab, nothing streams by default (see "Enabling capture" below for auto-enable rules).
+
+   **Option B — npm client (paused).** Baseline console/error/network/navigation capture only, no further capability work planned right now — see [ROADMAP.md](./ROADMAP.md) for why. Use this only if the extension isn't an option for your setup.
 
    ```bash
    npm install mobius-client
@@ -82,17 +88,48 @@ Install the chromium extension [here](https://chromewebstore.google.com/detail/b
    startMobiusStream();
    ```
 
-3. Ask your agent to check the tab's console/errors/network/navigation via the MCP tools below.
+3. **Ask your agent to check the tab's console/errors/network via the MCP tools below** (e.g. "check the browser console for errors").
 
 ### Developing this repo locally
 
+This is an npm workspaces monorepo (`apps/*`, `packages/*`). A single install at the root wires up every package — `npm install` inside an individual `apps/`/`packages/` folder is never necessary and will just fight the workspace symlinks in the root `node_modules`.
+
 ```bash
+git clone https://github.com/Topman-14/console-stream-mcp.git
+cd console-stream-mcp
 npm install
 npm run build
+```
 
-# start the MCP server from source instead of npx
+`npm run build` builds every workspace in dependency order (`packages/protocol` → `packages/capture-core` → the apps), since `apps/browser-extension`, `apps/mcp-server`, and `apps/npm-client` all consume the built `dist/` output of the two shared packages, not their TypeScript source.
+
+To run the MCP server from source instead of via `npx`:
+
+```bash
 npm run start --workspace=apps/mcp-server
 ```
+
+#### Watch mode
+
+For active development across the shared packages and the extension, run:
+
+```bash
+npm run watch
+```
+
+This does a one-time build of `packages/protocol`/`packages/capture-core` (so nothing is resolved against a missing `dist/` on a cold start), then runs three watchers in parallel with labeled output:
+
+* `[packages]` — `tsc -b --watch` for `packages/protocol` and `packages/capture-core`, incrementally rebuilding on save
+* `[vite]` — the extension's Vite dev server, which also drives crxjs's automatic extension reload in Chrome for background/popup/options changes
+* `[content-scripts]` — an esbuild watcher for `content-script.ts`/`injected.ts`, which are bundled as standalone IIFEs outside Vite's module graph (see the comment in `apps/browser-extension/vite.config.ts`)
+
+Load the extension once via `chrome://extensions` → enable Developer Mode → **Load unpacked** → select `apps/browser-extension/dist`. From then on:
+
+* Edits to `packages/protocol` or `packages/capture-core` propagate through to the extension's bundled output automatically.
+* Edits to background/popup/options files trigger Vite/crxjs's automatic reload in Chrome.
+* Edits to `content-script.ts`/`injected.ts` rebuild immediately, but since those are injected on demand via `chrome.scripting.executeScript`, the new code takes effect the next time they're injected (reload the target tab, or toggle capture off/on) rather than needing an extension reload.
+
+If you only need the shared packages rebuilding (e.g. while working on `apps/npm-client` or `apps/mcp-server`) without the extension's Vite/esbuild watchers, run `npm run watch -w packages/capture-core` directly instead — its `tsc -b --watch` follows the TypeScript project reference to `packages/protocol`, so both get built and watched together.
 
 ### Enabling capture (extension)
 
@@ -102,7 +139,7 @@ The extension never captures anything by default. Click its toolbar icon and hit
 
 * `get_recent_logs`
 * `get_recent_errors`
-* `get_network_requests`
+* `get_network_requests` — includes request/response headers and size-capped, redacted request/response bodies for text-like content-types (both browser clients, no CDP needed)
 * `get_logs_since`
 * `clear_logs`
 * `get_connected_tabs`
@@ -116,10 +153,24 @@ The extension never captures anything by default. Click its toolbar icon and hit
 * `take_screenshot`, `capture_full_page`, `capture_element` — extension only, requires `chrome.debugger` (CDP)
 * `capture_dom`, `capture_accessibility_tree` — extension only, requires CDP
 * `evaluate_js` — run arbitrary JS in a tab and get the result; extension only, requires CDP, fully open (no read-only enforcement)
-* `get_response_body`, `export_har` — extension only for `get_response_body` (requires CDP); `export_har` works from stored network events for either client but never includes bodies
+* `get_response_body` — extension only, requires CDP; fallback for the rare body `get_network_requests` couldn't capture (binary, oversized, non-text content-type)
+* `export_har` — works from stored network events for either client, includes headers and status text but never bodies
 * `start_cpu_profile`, `start_memory_profile` — extension only, requires CDP, job-based (see `get_job_status`/`get_job_result`)
 
 CDP tools (marked "requires CDP" above) make Chrome show a persistent "being debugged" banner on the tab once used — the debugger attaches on first use and stays attached, it doesn't attach/detach per call. This is a Chrome-level indicator, not something the extension can suppress. `start_cpu_profile`/`start_memory_profile` durations are capped at 60s and best-effort beyond ~25-30s — Chrome can terminate an idle MV3 background service worker, which would cut a long profile short.
+
+## Skills
+
+`skills/<name>/SKILL.md` — six scenario-focused skills, each a workflow for a specific bug class that's hard to catch by reading source alone but tractable with live browser data:
+
+| Skill | Catches |
+| --- | --- |
+| `mobius-dead-click` | A button/link/form that "does nothing" — pins down whether the handler never fired, failed silently, or hit a silent API failure |
+| `mobius-silent-api-failure` | An API returning `200 OK` with an error-shaped body (`success: false`, a GraphQL `errors` array) — invisible to status-code-only checks |
+| `mobius-contract-drift` | A response whose live JSON shape no longer matches the TypeScript type the frontend expects (renamed/missing fields) |
+| `mobius-document-reproduced-bug` | Turns a confirmed-but-unsolved repro into a write-up — screenshot, timeline, HAR — offering to save it as a Markdown file with the screenshot embedded |
+| `mobius-perf-stakeout` | Isolates "this feels slow" into network-bound, CPU-bound, or a memory leak building up over repeated use |
+| `mobius-session-drift` | A silently dropped auth/session mid-flow — the exact request where an auth header stops being sent |
 
 ## Client capabilities
 
@@ -135,7 +186,8 @@ Event ingestion (console/errors/network) is identical across both browser client
 | Debug sessions (`start_debug_session`/`end_debug_session`) | ✅ | ✅ (console/network/navigation event types only — no DOM mutations) |
 | Screenshots, DOM/accessibility snapshots | ✅ (requires CDP) | ❌ |
 | CPU/memory profiling | ✅ (requires CDP) | ❌ |
-| `evaluate_js`, network response bodies | ✅ (requires CDP) | ❌ |
+| `evaluate_js` | ✅ (requires CDP) | ❌ |
+| Network request/response headers + bodies (via `get_network_requests`) | ✅ | ✅ |
 | React/Redux/Zustand state, storage inspection | ❌ (planned) | ❌ (planned) |
 
 See [ROADMAP.md](./ROADMAP.md) for what "planned" maps to by stage.

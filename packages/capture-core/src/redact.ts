@@ -1,14 +1,13 @@
 export interface RedactionOptions {
-  redactHeaders: boolean;
-  redactCookies: boolean;
-  redactLocalStorage: boolean;
+  redactedHeaderNames: string[];
   maskEmails: boolean;
   maskJwts: boolean;
+  redactSensitiveBodyFields: boolean;
 }
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const JWT_RE = /\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
-const SENSITIVE_HEADER_RE = /^(authorization|cookie|set-cookie|x-api-key)$/i;
+const SENSITIVE_BODY_KEY_RE = /^(password|passwd|pwd|token|access_?token|refresh_?token|secret|api[_-]?key|authorization|auth|ssn|social_security(_number)?|credit_?card(_?number)?|card_?number|cvv|cvc|pin)$/i;
 
 function maskText(value: string, options: RedactionOptions): string {
   let result = value;
@@ -23,10 +22,32 @@ export function redactText(value: string, options: RedactionOptions): string {
 }
 
 export function redactHeaderValue(headerName: string, value: string, options: RedactionOptions): string {
-  if (options.redactHeaders && SENSITIVE_HEADER_RE.test(headerName)) return "[redacted]";
+  if (options.redactedHeaderNames.some((name) => name.toLowerCase() === headerName.toLowerCase())) return "[redacted]";
   return maskText(value, options);
 }
 
-export function redactCookieString(value: string, options: RedactionOptions): string {
-  return options.redactCookies ? "[redacted]" : maskText(value, options);
+function maskJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(maskJsonValue);
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = SENSITIVE_BODY_KEY_RE.test(key) ? "[redacted]" : maskJsonValue(val);
+    }
+    return result;
+  }
+  return value;
+}
+
+/** Applied to a captured request/response body right before emit. JSON bodies get
+ * key-based masking of sensitive fields (password, token, apiKey, ...); everything
+ * else just gets the same email/JWT masking as other captured text. */
+export function redactBodyText(value: string, contentType: string | undefined, options: RedactionOptions): string {
+  const masked = maskText(value, options);
+  if (!options.redactSensitiveBodyFields) return masked;
+  if (!contentType || !/json/i.test(contentType)) return masked;
+  try {
+    return JSON.stringify(maskJsonValue(JSON.parse(masked)));
+  } catch {
+    return masked;
+  }
 }

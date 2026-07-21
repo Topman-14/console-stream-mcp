@@ -98,7 +98,7 @@ export function createMcpServer(
 
   server.tool(
     "get_network_requests",
-    "Get the most recent fetch/XHR network requests observed in a connected browser tab.",
+    "Get the most recent fetch/XHR network requests observed in a connected browser tab, including request/response headers and size-capped (~20KB, redacted) request/response bodies where the content-type is text-like. A request may appear twice: a fast entry without responseBody, then a fuller one once the body finishes reading (non-blocking by design). Check requestBodyOmittedReason/responseBodyOmittedReason for why a body is missing (binary, FormData, non-text content-type) before assuming get_response_body is needed.",
     { tabId: z.string().optional(), limit: z.number().int().positive().max(500).default(50) },
     async ({ tabId, limit }) => {
       const resolved = resolveTabId(tabId);
@@ -348,7 +348,7 @@ export function createMcpServer(
 
   server.tool(
     "get_response_body",
-    "Get the response body of a recent network request by URL, if it's still available. Requires the browser extension and only covers requests made since the tab connected.",
+    "CDP fallback for a response body get_network_requests/get_logs_since didn't capture (binary, oversized, or skipped content-type) — most requests already carry responseBody inline, check there first. Requires the browser extension, only covers requests made since the tab connected, and is best-effort (URL-keyed; a duplicate URL requested twice may return the wrong one).",
     { tabId: z.string().optional(), requestUrl: z.string() },
     async ({ tabId, requestUrl }) => {
       const resolved = resolveTabId(tabId);
@@ -365,7 +365,7 @@ export function createMcpServer(
 
   server.tool(
     "export_har",
-    "Export this tab's captured network requests as a HAR 1.2 file. Response bodies are not included — use get_response_body per-request if needed.",
+    "Export this tab's captured network requests as a HAR 1.2 file, including request/response headers and status text. Bodies are not included — use get_network_requests/get_logs_since for inline bodies, or get_response_body per-request as a fallback.",
     { tabId: z.string().optional(), limit: z.number().int().positive().max(2000).default(500) },
     async ({ tabId, limit }) => {
       const resolved = resolveTabId(tabId);
