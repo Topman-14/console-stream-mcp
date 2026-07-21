@@ -6,7 +6,7 @@ Local-first: everything runs on `localhost`, no cloud services, no telemetry, no
 
 Pair it with a browser-side client:
 
-- **[Mobius browser extension](https://github.com/Topman-14/mobius-mcp/tree/main/apps/browser-extension)** — Chromium extension, adds browser control, screenshots, DOM/accessibility snapshots, CPU/memory profiling, and `evaluate_js` on top of event streaming (via `chrome.debugger`/CDP). Interactive: you can click around and trigger events yourself while the agent inspects them, instead of the agent driving headless automation blind.
+- **[Mobius browser extension](https://chromewebstore.google.com/detail/bdhnfoelpknephokgkldjopdggkakdop?utm_source=item-share-cb)** — Chromium extension, adds browser control, screenshots, DOM/accessibility snapshots, CPU/memory profiling, and `evaluate_js` on top of event streaming (via `chrome.debugger`/CDP). Interactive: you can click around and trigger events yourself while the agent inspects them, instead of the agent driving headless automation blind.
 - **[`mobius-client`](https://www.npmjs.com/package/mobius-client)** — drop-in npm package for direct app integration, no extension required, streams console/error/network/navigation events only. **Development is currently paused** (see the [root ROADMAP.md](https://github.com/Topman-14/mobius-mcp/blob/main/ROADMAP.md) for why) — the extension is the recommended client.
 
 Source: https://github.com/Topman-14/mobius-mcp
@@ -50,7 +50,7 @@ Or add it directly to your MCP client's config — Claude Code, Codex CLI, Gemin
 }
 ```
 
-Then load the [browser extension](https://github.com/Topman-14/mobius-mcp/tree/main/apps/browser-extension) and click "Enable tab" on the page you're debugging — capture is opt-in per tab, nothing streams by default.
+Then [install the browser extension](https://chromewebstore.google.com/detail/bdhnfoelpknephokgkldjopdggkakdop?utm_source=item-share-cb) and click "Enable tab" on the page you're debugging — capture is opt-in per tab, nothing streams by default.
 
 Once a browser tab is connected, ask your agent to check its console, errors, network activity, or DOM — no copy-pasting logs into chat.
 

@@ -95,7 +95,7 @@ A browser client captures runtime events — `console.*`, uncaught errors, unhan
    }
    ```
 
-2. **Install the browser extension.** This is currently the only supported way to stream a tab's runtime into the server — [see below](#client-capabilities) for why. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/bdhnfoelpknephokgkldjopdggkakdop?utm_source=item-share-cb), or load unpacked from `apps/browser-extension/dist` (see [Contributing](#contributing)).
+2. **[Install the browser extension](https://chromewebstore.google.com/detail/bdhnfoelpknephokgkldjopdggkakdop?utm_source=item-share-cb).** This is currently the only supported way to stream a tab's runtime into the server — [see below](#client-capabilities) for why.
 
    Click the toolbar icon and hit "Enable tab" on the tab you want to debug — capture is opt-in per tab, nothing streams by default (see [Enabling capture](#enabling-capture-extension)).
 
