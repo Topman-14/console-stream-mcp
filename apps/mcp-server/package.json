@@ -1,6 +1,6 @@
 {
   "name": "mobius-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server exposing live browser runtime events to AI coding agents",
   "license": "MIT",
   "type": "module",
