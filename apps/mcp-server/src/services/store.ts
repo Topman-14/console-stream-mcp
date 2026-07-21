@@ -1,21 +1,8 @@
 import { EventEmitter } from "node:events";
 import type { BrowserEvent, EventType } from "@mobius-mcp/capture-core";
-
-const MAX_EVENTS_PER_TAB = Number(process.env.CONSOLE_STREAM_MAX_EVENTS_PER_TAB) || 1000;
-const MAX_FIELD_LENGTH = 10_000;
-
-const TRUNCATABLE_FIELDS = ["message", "stack", "reason", "requestBody", "responseBody"] as const;
-
-function truncateFields(event: BrowserEvent): BrowserEvent {
-  const result: Record<string, unknown> = { ...event };
-  for (const field of TRUNCATABLE_FIELDS) {
-    const value = result[field];
-    if (typeof value === "string" && value.length > MAX_FIELD_LENGTH) {
-      result[field] = value.slice(0, MAX_FIELD_LENGTH) + "…[truncated]";
-    }
-  }
-  return result as unknown as BrowserEvent;
-}
+import type { EventSink } from "../types.js";
+import { MAX_EVENTS_PER_TAB } from "../data.js";
+import { truncateEventFields } from "../utils/events.js";
 
 class TabBuffer {
   private events: BrowserEvent[] = [];
@@ -52,6 +39,23 @@ export class EventStore {
   private nextSeq = 1;
   private emitter = new EventEmitter();
 
+  /**
+   * `persistence` durably mirrors every mutation (see services/persistence.ts) so a
+   * crash/restart doesn't lose recent history — EventStore itself stays unaware of how.
+   * `hydrated` seeds buffers (and nextSeq) from that store's own boot-time replay, so a
+   * reconnecting tab picks up its pre-crash history instead of starting from empty.
+   */
+  constructor(private persistence?: EventSink, hydrated?: Map<string, BrowserEvent[]>) {
+    for (const [clientId, events] of hydrated ?? []) {
+      const buffer = new TabBuffer();
+      for (const event of events) {
+        buffer.push(event);
+        this.nextSeq = Math.max(this.nextSeq, event.seq + 1);
+      }
+      this.buffers.set(clientId, buffer);
+    }
+  }
+
   private bufferFor(clientId: string): TabBuffer {
     let buffer = this.buffers.get(clientId);
     if (!buffer) {
@@ -62,8 +66,9 @@ export class EventStore {
   }
 
   addEvent(event: Omit<BrowserEvent, "seq">): BrowserEvent {
-    const stored = truncateFields({ ...event, seq: this.nextSeq++ } as BrowserEvent);
+    const stored = truncateEventFields({ ...event, seq: this.nextSeq++ } as BrowserEvent);
     this.bufferFor(event.clientId).push(stored);
+    this.persistence?.append(stored);
     this.emitter.emit("event", stored);
     return stored;
   }
@@ -90,9 +95,11 @@ export class EventStore {
 
   clear(clientId: string): void {
     this.buffers.get(clientId)?.clear();
+    this.persistence?.clear(clientId);
   }
 
   deleteBuffer(clientId: string): void {
     this.buffers.delete(clientId);
+    this.persistence?.remove(clientId);
   }
 }

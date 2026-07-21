@@ -1,15 +1,6 @@
 import { randomUUID } from "node:crypto";
-
-export type JobStatus = "running" | "done" | "error" | "cancelled";
-
-export interface Job {
-  id: string;
-  kind: string;
-  status: JobStatus;
-  result?: unknown;
-  error?: string;
-  createdAt: number;
-}
+import type { Job } from "../types.js";
+import { errorMessage } from "../utils/errors.js";
 
 export class JobManager {
   private jobs = new Map<string, Job>();
@@ -27,7 +18,7 @@ export class JobManager {
       .catch((error: unknown) => {
         if (job.status === "cancelled") return;
         job.status = "error";
-        job.error = error instanceof Error ? error.message : String(error);
+        job.error = errorMessage(error);
       });
 
     return job;

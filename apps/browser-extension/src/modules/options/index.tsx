@@ -22,6 +22,7 @@ export function Options() {
   const [mcp, updateMcp] = useSyncedSetting(mcpSettings);
   const [debug, updateDebug] = useSyncedSetting(debugSettings);
   const [exporting, setExporting] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<string>();
 
   const [rules, setRulesState] = useState<CaptureRule[]>([]);
   const [pattern, setPattern] = useState("");
@@ -33,6 +34,15 @@ export function Options() {
   useEffect(() => {
     refreshRules();
   }, []);
+
+  // "notifications" is a required manifest permission (always granted at install — there's
+  // no runtime prompt for it), so the only way to tell the user why they see nothing is to
+  // check Chrome's own per-extension setting and surface it here. Re-check whenever the
+  // toggle turns on, since the user may have just fixed it in chrome://settings and come back.
+  useEffect(() => {
+    if (!general?.notifications) return;
+    chrome.notifications.getPermissionLevel((level) => setNotificationPermission(level));
+  }, [general?.notifications]);
 
   useEffect(() => {
     Promise.all(rules.map((r) => hasOrigin(ruleToOrigin(r.pattern)).then((granted) => [r.id, granted] as const))).then((entries) =>
@@ -118,12 +128,21 @@ export function Options() {
                 ))}
               </div>
             </div>
-            <SettingRow
-              label="Error notifications"
-              description="Show a system notification when a runtime error is captured"
-              checked={general?.notifications ?? false}
-              onCheckedChange={(v) => updateGeneral({ notifications: v })}
-            />
+            <div>
+              <SettingRow
+                label="Error notifications"
+                description="Show a system notification when a runtime error is captured"
+                checked={general?.notifications ?? false}
+                onCheckedChange={(v) => updateGeneral({ notifications: v })}
+              />
+              {general?.notifications && notificationPermission && notificationPermission !== "granted" && (
+                <p className="pb-2.5 text-sm text-destructive">
+                  Chrome reports notification permission as "{notificationPermission}" — enable it at{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono">chrome://settings/content/notifications</code>, and check your OS's notification
+                  settings for Chrome, then reopen this page.
+                </p>
+              )}
+            </div>
           </div>
         </section>
 

@@ -1,21 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { PROTOCOL_VERSION, type ServerMessage } from "@mobius-mcp/capture-core";
 import type { ClientRegistry } from "./registry.js";
-
-interface Pending {
-  resolve: (result: unknown) => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
-}
-
-const DEFAULT_TIMEOUT_MS = 10_000;
+import type { PendingCommand } from "../types.js";
+import { DEFAULT_COMMAND_TIMEOUT_MS } from "../data.js";
 
 export class CommandDispatcher {
-  private pending = new Map<string, Pending>();
+  private pending = new Map<string, PendingCommand>();
 
   constructor(private registry: ClientRegistry) {}
 
-  sendCommand(clientId: string, command: string, params: unknown = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
+  sendCommand(clientId: string, command: string, params: unknown = {}, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS): Promise<unknown> {
     const ws = this.registry.getWs(clientId);
     if (!ws) {
       return Promise.reject(new Error(`No connected client with id ${clientId}`));

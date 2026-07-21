@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { PROTOCOL_VERSION, type ControlMessage } from "@mobius-mcp/capture-core";
-
-const REQUEST_TIMEOUT_MS = 15_000;
+import { CONTROL_REQUEST_TIMEOUT_MS } from "../data.js";
 
 /** Used by a follower process (see index.ts) to forward MCP tool calls to whichever
  * process actually won the WS port bind and is acting as the hub. */
@@ -55,7 +54,7 @@ export class ControlClient {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error("mobius-mcp hub unavailable or request timed out — is another mobius-mcp process still running?"));
-      }, REQUEST_TIMEOUT_MS);
+      }, CONTROL_REQUEST_TIMEOUT_MS);
 
       this.pending.set(requestId, {
         resolve: (v) => {

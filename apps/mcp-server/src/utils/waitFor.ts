@@ -1,6 +1,6 @@
 import type { BrowserEvent } from "@mobius-mcp/capture-core";
-import type { EventStore } from "./store.js";
-import { ERROR_TYPES, NAVIGATION_TYPES, NETWORK_TYPES } from "./eventCategories.js";
+import type { EventStore } from "../services/store.js";
+import { ERROR_TYPES, NAVIGATION_TYPES, NETWORK_TYPES } from "../data.js";
 
 function waitForEvent(store: EventStore, clientId: string, predicate: (e: BrowserEvent) => boolean, timeoutMs: number): Promise<BrowserEvent | null> {
   return new Promise((resolve) => {

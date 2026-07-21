@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PROTOCOL_VERSION, isProtocolVersionSupported, type ClientMessage, type ControlMessage } from "@mobius-mcp/capture-core";
-import type { EventStore } from "./store.js";
-import type { ClientRegistry } from "./registry.js";
-import type { CommandDispatcher } from "./commandDispatcher.js";
-import type { ToolDef } from "./mcpServer.js";
+import type { EventStore } from "../services/store.js";
+import type { ClientRegistry } from "../services/registry.js";
+import type { CommandDispatcher } from "../services/commandDispatcher.js";
+import type { ToolDef } from "../types.js";
 
 /** Resolves once the port is actually bound (this process becomes the hub), rejects on
  * bind failure (most commonly EADDRINUSE — another mobius-mcp process already holds the

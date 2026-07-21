@@ -11,13 +11,18 @@ export interface EventBase {
 export interface ConsoleEvent extends EventBase {
   type: "console.log" | "console.info" | "console.warn" | "console.error";
   message: string;
+  // Set only if the server's own store cap cut this further — the original value
+  // isn't recoverable afterward (unlike a network body, there's no fallback fetch).
+  messageTruncated?: boolean;
   args?: unknown[];
 }
 
 export interface RuntimeErrorEvent extends EventBase {
   type: "window.onerror";
   message: string;
+  messageTruncated?: boolean;
   stack?: string;
+  stackTruncated?: boolean;
   source?: string;
   lineno?: number;
   colno?: number;
@@ -26,7 +31,9 @@ export interface RuntimeErrorEvent extends EventBase {
 export interface UnhandledRejectionEvent extends EventBase {
   type: "unhandledrejection";
   reason: string;
+  reasonTruncated?: boolean;
   stack?: string;
+  stackTruncated?: boolean;
 }
 
 export interface NetworkEvent extends EventBase {

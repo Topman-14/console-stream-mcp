@@ -1,23 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type { EventType } from "@mobius-mcp/capture-core";
 import type { EventStore } from "./store.js";
 import type { CommandDispatcher } from "./commandDispatcher.js";
-import { categoriesToTypes } from "./eventCategories.js";
-
-interface Session {
-  id: string;
-  clientId: string;
-  startSeq: number;
-  types: EventType[];
-  domCapture: boolean;
-}
+import type { DebugSession } from "../types.js";
+import { categoriesToTypes } from "../utils/events.js";
 
 export class DebugSessionManager {
-  private sessions = new Map<string, Session>();
+  private sessions = new Map<string, DebugSession>();
 
   constructor(private store: EventStore, private dispatcher: CommandDispatcher) {}
 
-  async start(clientId: string, categories: string[]): Promise<Session> {
+  async start(clientId: string, categories: string[]): Promise<DebugSession> {
     const types = categoriesToTypes(categories);
     const domCapture = categories.includes("dom");
 
@@ -25,7 +17,7 @@ export class DebugSessionManager {
       await this.dispatcher.sendCommand(clientId, "start_dom_capture", {});
     }
 
-    const session: Session = { id: randomUUID(), clientId, startSeq: this.store.currentSeq(), types, domCapture };
+    const session: DebugSession = { id: randomUUID(), clientId, startSeq: this.store.currentSeq(), types, domCapture };
     this.sessions.set(session.id, session);
     return session;
   }

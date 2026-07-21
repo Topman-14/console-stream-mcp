@@ -2,30 +2,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { EventType } from "@mobius-mcp/capture-core";
-import type { EventStore } from "./store.js";
-import type { ClientRegistry } from "./registry.js";
-import type { CommandDispatcher } from "./commandDispatcher.js";
-import type { JobManager } from "./jobs.js";
-import { CONSOLE_TYPES, ERROR_TYPES, NETWORK_TYPES } from "./eventCategories.js";
-import type { DebugSessionManager } from "./debugSession.js";
-import { waitForConsoleError, waitForNavigation, waitForRequest } from "./waitFor.js";
-import { toHar } from "./har.js";
-
-function toolResult(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
-}
-
-function toolError(message: string) {
-  return { content: [{ type: "text" as const, text: message }], isError: true as const };
-}
-
-export interface ToolDef {
-  description: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  schema: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handler: (args: any) => Promise<any>;
-}
+import type { EventStore } from "../services/store.js";
+import type { ClientRegistry } from "../services/registry.js";
+import type { CommandDispatcher } from "../services/commandDispatcher.js";
+import type { JobManager } from "../services/jobs.js";
+import type { DebugSessionManager } from "../services/debugSession.js";
+import type { ToolDef } from "../types.js";
+import { CONSOLE_TYPES, ERROR_TYPES, NETWORK_TYPES } from "../data.js";
+import { waitForConsoleError, waitForNavigation, waitForRequest } from "../utils/waitFor.js";
+import { createHarBodyFetcher, toHar } from "../utils/har.js";
+import { errorMessage } from "../utils/errors.js";
+import { requireCdp, resolveCdpTab, resolveTabId, runCommand, toolError, toolResult } from "../utils/tools.js";
 
 /** Every call below goes through the same 4-arg server.tool(name, description, schema, handler)
  * signature, so recording them for the control channel (see ControlMessage in the protocol
@@ -52,34 +39,12 @@ export function createMcpServer(
 
   let activeTabId: string | undefined;
 
-  /** Resolves which tab a tool call should target: explicit param wins, then the
-   * session's active tab, then auto-select if exactly one tab is connected. */
-  function resolveTabId(explicitTabId?: string): { clientId: string } | { error: ReturnType<typeof toolError> } {
-    if (explicitTabId) return { clientId: explicitTabId };
-
-    const connected = registry.list();
-    if (connected.length === 0) {
-      return { error: toolError("No tabs connected. Ask the user to click the mobius-mcp extension icon and enable capture on the tab they want debugged.") };
-    }
-    if (activeTabId && connected.some((c) => c.clientId === activeTabId)) {
-      return { clientId: activeTabId };
-    }
-    if (connected.length === 1) {
-      return { clientId: connected[0].clientId };
-    }
-    return {
-      error: toolError(
-        `Multiple tabs connected, specify tabId or call set_active_tab first. Candidates: ${JSON.stringify(connected, null, 2)}`,
-      ),
-    };
-  }
-
   server.tool(
     "get_recent_logs",
     "Get the most recent console.log/info/warn events from a connected browser tab.",
     { tabId: z.string().optional(), limit: z.number().int().positive().max(500).default(50) },
     async ({ tabId, limit }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       return toolResult(store.getRecent(resolved.clientId, CONSOLE_TYPES, limit));
     },
@@ -90,7 +55,7 @@ export function createMcpServer(
     "Get the most recent console.error, window.onerror, and unhandled promise rejection events from a connected browser tab.",
     { tabId: z.string().optional(), limit: z.number().int().positive().max(500).default(50) },
     async ({ tabId, limit }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       return toolResult(store.getRecent(resolved.clientId, ERROR_TYPES, limit));
     },
@@ -98,10 +63,10 @@ export function createMcpServer(
 
   server.tool(
     "get_network_requests",
-    "Get the most recent fetch/XHR network requests observed in a connected browser tab, including request/response headers and size-capped (~20KB, redacted) request/response bodies where the content-type is text-like. Check requestBodyOmittedReason/responseBodyOmittedReason for why a body is missing (binary, FormData, non-text content-type) before assuming get_response_body is needed.",
+    "Get the most recent fetch/XHR network requests observed in a connected browser tab. Each request is exactly one event carrying method/URL/status/duration/headers together with size-capped (~20KB, redacted) request/response bodies where the content-type is text-like — nothing arrives as a separate follow-up. Check requestBodyOmittedReason/responseBodyOmittedReason for why a body is missing (binary, FormData, non-text content-type) before assuming get_response_body/get_request_body is needed.",
     { tabId: z.string().optional(), limit: z.number().int().positive().max(500).default(50) },
     async ({ tabId, limit }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       return toolResult(store.getRecent(resolved.clientId, NETWORK_TYPES, limit));
     },
@@ -112,14 +77,14 @@ export function createMcpServer(
     "Poll for events with seq greater than the given cursor from a connected browser tab. Returns the new events and the latest cursor to pass next time.",
     { tabId: z.string().optional(), cursor: z.number().int().nonnegative().default(0), types: z.array(z.string()).optional() },
     async ({ tabId, cursor, types }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       return toolResult(store.getSince(resolved.clientId, cursor, { types: types as EventType[] | undefined }));
     },
   );
 
   server.tool("clear_logs", "Clear the in-memory event history for a connected tab.", { tabId: z.string().optional() }, async ({ tabId }) => {
-    const resolved = resolveTabId(tabId);
+    const resolved = resolveTabId(registry, activeTabId, tabId);
     if ("error" in resolved) return resolved.error;
     store.clear(resolved.clientId);
     return toolResult({ cleared: true, tabId: resolved.clientId });
@@ -134,7 +99,7 @@ export function createMcpServer(
     "Get which event categories (console, errors, network, navigation, dom) a connected tab is actively capturing, plus its redaction settings. Check this before concluding an empty result from get_recent_logs/get_recent_errors/get_network_requests means nothing happened — the category may simply be turned off.",
     { tabId: z.string().optional() },
     async ({ tabId }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       const client = registry.get(resolved.clientId);
       if (!client) return toolError(`Tab ${resolved.clientId} is no longer connected.`);
@@ -160,13 +125,9 @@ export function createMcpServer(
     "Navigate a connected browser tab to a URL.",
     { tabId: z.string().optional(), url: z.string() },
     async ({ tabId, url }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "navigate_to", { url }));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "navigate_to", { url });
     },
   );
 
@@ -175,13 +136,9 @@ export function createMcpServer(
     "Bring a connected browser tab to the foreground.",
     { tabId: z.string().optional() },
     async ({ tabId }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "switch_tab", {}));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "switch_tab");
     },
   );
 
@@ -190,13 +147,9 @@ export function createMcpServer(
     "Reload a connected browser tab.",
     { tabId: z.string().optional() },
     async ({ tabId }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "reload_tab", {}));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "reload_tab");
     },
   );
 
@@ -209,11 +162,7 @@ export function createMcpServer(
       if (!extensionClient) {
         return toolError("No extension connected. list_tabs requires the mobius-mcp extension to be enabled on at least one tab.");
       }
-      try {
-        return toolResult(await dispatcher.sendCommand(extensionClient.clientId, "list_tabs", {}));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, extensionClient.clientId, "list_tabs");
     },
   );
 
@@ -236,28 +185,14 @@ export function createMcpServer(
     return toolResult({ cancelled });
   });
 
-  function requireCdp(clientId: string): ReturnType<typeof toolError> | undefined {
-    const client = registry.get(clientId);
-    if (!client?.capabilities.includes("cdp")) {
-      return toolError(`Tab ${clientId} doesn't support this (requires the browser extension, not the npm client).`);
-    }
-    return undefined;
-  }
-
   server.tool(
     "take_screenshot",
     "Capture a screenshot of a connected tab's current viewport. Requires the browser extension. Shows Chrome's 'being debugged' indicator while attached.",
     { tabId: z.string().optional() },
     async ({ tabId }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "take_screenshot", {}));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "take_screenshot");
     },
   );
 
@@ -266,15 +201,9 @@ export function createMcpServer(
     "Capture a screenshot of a connected tab's full scrollable page, not just the viewport. Requires the browser extension.",
     { tabId: z.string().optional() },
     async ({ tabId }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_full_page", {}));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "capture_full_page");
     },
   );
 
@@ -283,15 +212,9 @@ export function createMcpServer(
     "Capture a screenshot of one element matching a CSS selector. Requires the browser extension.",
     { tabId: z.string().optional(), selector: z.string() },
     async ({ tabId, selector }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_element", { selector }));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "capture_element", { selector });
     },
   );
 
@@ -300,15 +223,9 @@ export function createMcpServer(
     "Get the tab's current DOM as HTML (document.documentElement.outerHTML). Requires the browser extension.",
     { tabId: z.string().optional() },
     async ({ tabId }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_dom", {}));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "capture_dom");
     },
   );
 
@@ -317,15 +234,9 @@ export function createMcpServer(
     "Get the tab's full accessibility tree. Requires the browser extension.",
     { tabId: z.string().optional() },
     async ({ tabId }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "capture_accessibility_tree", {}));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "capture_accessibility_tree");
     },
   );
 
@@ -334,15 +245,9 @@ export function createMcpServer(
     "Execute arbitrary JavaScript in a connected tab and return the result. Fully open, no read-only enforcement — this is the dev's own browser and app. Requires the browser extension.",
     { tabId: z.string().optional(), expression: z.string() },
     async ({ tabId, expression }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "evaluate_js", { expression }));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "evaluate_js", { expression });
     },
   );
 
@@ -351,26 +256,32 @@ export function createMcpServer(
     "CDP fallback for a response body get_network_requests/get_logs_since didn't capture (binary, oversized, or skipped content-type) — most requests already carry responseBody inline, check there first. Requires the browser extension, only covers requests made since the tab connected, and is best-effort (URL-keyed; a duplicate URL requested twice may return the wrong one).",
     { tabId: z.string().optional(), requestUrl: z.string() },
     async ({ tabId, requestUrl }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
-      try {
-        return toolResult(await dispatcher.sendCommand(resolved.clientId, "get_response_body", { requestUrl }));
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "get_response_body", { requestUrl });
+    },
+  );
+
+  server.tool(
+    "get_request_body",
+    "CDP fallback for a request body get_network_requests/get_logs_since didn't capture (binary, FormData, oversized, or skipped content-type) — most requests already carry requestBody inline, check there first. Requires the browser extension, only covers requests made since the tab connected, and is best-effort (URL-keyed; a duplicate URL requested twice may return the wrong one).",
+    { tabId: z.string().optional(), requestUrl: z.string() },
+    async ({ tabId, requestUrl }) => {
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
+      if ("error" in resolved) return resolved.error;
+      return runCommand(dispatcher, resolved.clientId, "get_request_body", { requestUrl });
     },
   );
 
   server.tool(
     "export_har",
-    "Export this tab's captured network requests as a HAR 1.2 file, including request/response headers and status text. Bodies are not included — use get_network_requests/get_logs_since for inline bodies, or get_response_body per-request as a fallback.",
+    "Export this tab's captured network requests as a HAR 1.2 file, including request/response headers, status text, and full bodies. A body capture-core truncated or skipped inline (binary, oversized, non-text content-type) is re-fetched in full over CDP when the browser extension is connected — binary bodies come back base64-encoded in content.encoding, per the HAR spec. Best-effort: CDP only remembers requests made since the tab connected, so a very old or already-evicted request may still land partial.",
     { tabId: z.string().optional(), limit: z.number().int().positive().max(2000).default(500) },
     async ({ tabId, limit }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      return toolResult(toHar(store.getRecent(resolved.clientId, NETWORK_TYPES, limit)));
+      const fetcher = requireCdp(registry, resolved.clientId) ? undefined : createHarBodyFetcher(dispatcher, resolved.clientId);
+      return toolResult(await toHar(store.getRecent(resolved.clientId, NETWORK_TYPES, limit), fetcher));
     },
   );
 
@@ -379,10 +290,8 @@ export function createMcpServer(
     "Start a CPU profile on a connected tab for a fixed duration; returns a jobId immediately, poll get_job_status/get_job_result. Requires the browser extension.",
     { tabId: z.string().optional(), durationMs: z.number().int().positive().max(60_000).default(5000) },
     async ({ tabId, durationMs }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
       const job = jobs.startJob("cpu-profile", () => dispatcher.sendCommand(resolved.clientId, "start_cpu_profile", { durationMs }, durationMs + 5000));
       return toolResult({ jobId: job.id });
     },
@@ -393,10 +302,8 @@ export function createMcpServer(
     "Start a memory (heap sampling) profile on a connected tab for a fixed duration; returns a jobId immediately, poll get_job_status/get_job_result. Requires the browser extension.",
     { tabId: z.string().optional(), durationMs: z.number().int().positive().max(60_000).default(5000) },
     async ({ tabId, durationMs }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveCdpTab(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      const cdpError = requireCdp(resolved.clientId);
-      if (cdpError) return cdpError;
       const job = jobs.startJob("memory-profile", () => dispatcher.sendCommand(resolved.clientId, "start_memory_profile", { durationMs }, durationMs + 5000));
       return toolResult({ jobId: job.id });
     },
@@ -407,13 +314,13 @@ export function createMcpServer(
     "Start recording a time-ordered timeline of events (console, network, navigation, and optionally DOM mutations) for one tab. Does not survive a full-page navigation on that tab.",
     { tabId: z.string().optional(), capture: z.array(z.enum(["console", "network", "navigation", "dom"])).default(["console", "network", "navigation"]) },
     async ({ tabId, capture }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       try {
         const session = await debugSessions.start(resolved.clientId, capture);
         return toolResult({ sessionId: session.id });
       } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
+        return toolError(errorMessage(err));
       }
     },
   );
@@ -429,7 +336,7 @@ export function createMcpServer(
     "Block until the next console.error/window.onerror/unhandledrejection on a tab, or timeout.",
     { tabId: z.string().optional(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
     async ({ tabId, timeoutMs }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       const event = await waitForConsoleError(store, resolved.clientId, timeoutMs);
       return toolResult(event ?? { timedOut: true });
@@ -441,7 +348,7 @@ export function createMcpServer(
     "Block until the next navigation event on a tab, or timeout. Only fires for rule-enabled tabs (see README).",
     { tabId: z.string().optional(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
     async ({ tabId, timeoutMs }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       const event = await waitForNavigation(store, resolved.clientId, timeoutMs);
       return toolResult(event ?? { timedOut: true });
@@ -453,7 +360,7 @@ export function createMcpServer(
     "Block until a network request whose URL contains urlPattern is observed on a tab, or timeout.",
     { tabId: z.string().optional(), urlPattern: z.string(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
     async ({ tabId, urlPattern, timeoutMs }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
       const event = await waitForRequest(store, resolved.clientId, urlPattern, timeoutMs);
       return toolResult(event ?? { timedOut: true });
@@ -465,14 +372,9 @@ export function createMcpServer(
     "Block until a CSS selector appears in the tab's DOM, or timeout. Extension only.",
     { tabId: z.string().optional(), selector: z.string(), timeoutMs: z.number().int().positive().max(60_000).default(10_000) },
     async ({ tabId, selector, timeoutMs }) => {
-      const resolved = resolveTabId(tabId);
+      const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      try {
-        const result = await dispatcher.sendCommand(resolved.clientId, "wait_for_element", { selector, timeoutMs }, timeoutMs + 2000);
-        return toolResult(result);
-      } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
-      }
+      return runCommand(dispatcher, resolved.clientId, "wait_for_element", { selector, timeoutMs }, timeoutMs + 2000);
     },
   );
 
@@ -492,7 +394,7 @@ export function createFollowerMcpServer(toolDefs: Map<string, ToolDef>, invoke: 
       try {
         return await invoke(name, args);
       } catch (err) {
-        return toolError(err instanceof Error ? err.message : String(err));
+        return toolError(errorMessage(err));
       }
     };
     // def.schema is untyped (`any`) since it's harvested at runtime from an arbitrary tool

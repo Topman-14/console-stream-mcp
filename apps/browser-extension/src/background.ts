@@ -206,6 +206,12 @@ async function runCommand(message: ServerMessage): Promise<unknown> {
       if (!requestId) throw new Error(`No recent CDP-tracked request for ${requestUrl}. Response bodies are only available for requests made while the tab was capture-enabled.`);
       return sendCdp(tabId, "Network.getResponseBody", { requestId });
     }
+    case "get_request_body": {
+      const { requestUrl } = message.params as { requestUrl: string };
+      const requestId = findRequestId(tabId, requestUrl);
+      if (!requestId) throw new Error(`No recent CDP-tracked request for ${requestUrl}. Request bodies are only available for requests made while the tab was capture-enabled.`);
+      return sendCdp(tabId, "Network.getRequestPostData", { requestId });
+    }
 
     default:
       throw new Error(`Unknown command: ${message.command}`);
@@ -328,17 +334,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // false and silently skip the very first error notification after every idle restart.
       await settingsReady;
       if (bucket === "errors" && notificationsEnabled) {
-        chrome.notifications.create(
-          {
-            type: "basic",
-            iconUrl: NOTIFICATION_ICON,
-            title: "mobius-mcp",
-            message: "message" in event ? event.message : "reason" in event ? event.reason : "Runtime error captured",
-          },
-          () => {
-            if (chrome.runtime.lastError) console.error("[mobius-mcp] notification failed:", chrome.runtime.lastError.message);
-          },
-        );
+        // "notifications" is a required manifest permission (auto-granted at install, no
+        // runtime prompt exists for it) — this can still read "denied" if the user turned
+        // it off via chrome://settings/content/notifications, or the OS itself blocks
+        // Chrome. There's nothing more actionable to do here beyond a clear log; the
+        // options page surfaces the same check where the user can actually see it.
+        chrome.notifications.getPermissionLevel((level) => {
+          if (level !== "granted") {
+            console.warn(
+              "[mobius-mcp] error notifications are enabled in settings, but Chrome reports notification permission as",
+              level,
+              "— check chrome://settings/content/notifications and your OS notification settings for Chrome.",
+            );
+            return;
+          }
+          chrome.notifications.create(
+            {
+              type: "basic",
+              iconUrl: NOTIFICATION_ICON,
+              title: "mobius-mcp",
+              message: "message" in event ? event.message : "reason" in event ? event.reason : "Runtime error captured",
+            },
+            () => {
+              if (chrome.runtime.lastError) console.error("[mobius-mcp] notification failed:", chrome.runtime.lastError.message);
+            },
+          );
+        });
       }
     });
     return;

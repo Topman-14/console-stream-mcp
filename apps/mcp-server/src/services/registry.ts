@@ -1,9 +1,7 @@
 import type { ClientInfo } from "@mobius-mcp/capture-core";
 import type { WebSocket } from "ws";
-
-const PURGE_DELAY_MS = Number(process.env.CONSOLE_STREAM_PURGE_DELAY_MS) || 5 * 60 * 1000;
-
-type RegisteredClient = ClientInfo & { ws: WebSocket; disconnectedAt?: number };
+import { CLIENT_PURGE_DELAY_MS } from "../data.js";
+import type { RegisteredClient } from "../types.js";
 
 export class ClientRegistry {
   private clients = new Map<string, RegisteredClient>();
@@ -29,7 +27,7 @@ export class ClientRegistry {
       this.clients.delete(clientId);
       this.purgeTimers.delete(clientId);
       this.onPurge?.(clientId);
-    }, PURGE_DELAY_MS);
+    }, CLIENT_PURGE_DELAY_MS);
     this.purgeTimers.set(clientId, timer);
   }
 

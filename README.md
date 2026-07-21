@@ -152,7 +152,7 @@ The extension never captures anything by default. Click its toolbar icon and hit
 * `take_screenshot`, `capture_full_page`, `capture_element` — extension only, requires `chrome.debugger` (CDP)
 * `capture_dom`, `capture_accessibility_tree` — extension only, requires CDP
 * `evaluate_js` — run arbitrary JS in a tab and get the result; extension only, requires CDP, fully open (no read-only enforcement)
-* `get_response_body` — extension only, requires CDP; fallback for the rare body `get_network_requests` couldn't capture (binary, oversized, non-text content-type)
+* `get_response_body`, `get_request_body` — extension only, requires CDP; fallback for the rare body `get_network_requests` couldn't capture (binary, oversized, non-text content-type)
 * `export_har` — works from stored network events for either client, includes headers and status text but never bodies
 * `start_cpu_profile`, `start_memory_profile` — extension only, requires CDP, job-based (see `get_job_status`/`get_job_result`)
 
