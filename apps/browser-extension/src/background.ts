@@ -1,5 +1,4 @@
-import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "@mobius-mcp/protocol";
-import type { CapturedEvent } from "@mobius-mcp/capture-core";
+import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage, type CapturedEvent } from "@mobius-mcp/capture-core";
 import { findMatchingRule, getRules, ruleToOrigin } from "./lib/rules.js";
 import { hasOrigin } from "./lib/host-permissions.js";
 import { getTabState, setTabState, setPaused, clearTabState, getTabIdForClient, getAllTabStates, type TabState } from "./lib/tab-state.js";
@@ -227,7 +226,7 @@ async function bootSettings() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync") return;
-  if (changes.performanceSettings || changes.debugSettings || changes.generalSettings) bootSettings();
+  if (changes.performanceSettings || changes.debugSettings || changes.generalSettings) settingsReady = bootSettings();
   if (changes.mcpSettings) {
     debugLog("mcp settings changed, reconnecting");
     retryDelay = 0;
@@ -235,7 +234,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-bootSettings();
+let settingsReady = bootSettings();
 connect();
 resumeCaptureAfterReload();
 
@@ -324,6 +323,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const event: CapturedEvent = { ...message.event, metadata: { ...message.event.metadata, tabId } };
       send({ version: PROTOCOL_VERSION, kind: "event", clientId: state.clientId, event });
       const bucket = await recordEvent(tabId, event);
+      // On a freshly-woken service worker, bootSettings()'s storage read can still be in
+      // flight here — without this await, notificationsEnabled may read its stale initial
+      // false and silently skip the very first error notification after every idle restart.
+      await settingsReady;
       if (bucket === "errors" && notificationsEnabled) {
         chrome.notifications.create(
           {
@@ -431,6 +434,11 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId !== 0) return;
   const fromUrl = lastKnownUrl.get(details.tabId);
   lastKnownUrl.set(details.tabId, details.url);
+
+  // The previous document's clientId is about to be discarded below — tell the server
+  // it's gone, or it lingers in get_connected_tabs forever (nothing else ever byes it).
+  const previousState = await getTabState(details.tabId);
+  if (previousState) send({ version: PROTOCOL_VERSION, kind: "bye", clientId: previousState.clientId });
   await clearTabState(details.tabId);
 
   const rules = await getRules();

@@ -2,7 +2,7 @@
 
 mobius-mcp started as a log bridge. The direction is a **browser runtime service**: a server an agent can command, not just read from — synchronous tools answer questions about existing state, asynchronous ones (backed by a shared job system) initiate work that takes time.
 
-Nothing here is published yet, so none of this is versioned (`v1`/`v2`/...) — it's tracked as build stages instead. Version numbers start once something actually ships. See [PROJECT.md](./PROJECT.md) for the architecture this builds toward.
+Nothing here is published yet, so none of this is versioned (`v1`/`v2`/...) — it's tracked as build stages instead. Version numbers start once something actually ships.
 
 **npm client status: paused.** `mobius-client` works at its current baseline (console/error/network capture via `startMobiusStream()`), but isn't getting further investment right now — framework/bundler nuances (Vite/webpack HMR re-invoking the patch, Next.js SSR/RSC boundary, React StrictMode double-invoke) make it a deeper problem than the extension warrants prioritizing today. The extension is where new capability work lands; the npm client will catch up once that's mature.
 
@@ -45,7 +45,7 @@ Everything here requires `chrome.debugger` (Chrome DevTools Protocol) — gated 
 Closes the biggest network-capture gap: `NetworkEvent` used to carry only method/URL/status/duration and request headers, so an agent chasing a failed API call had to fall back to the CDP-only `get_response_body` (extension-only, and it didn't cover request bodies at all).
 
 - `NetworkEvent` gained `responseHeaders`, `statusText`, `mimeType`, and size-capped (~20,000 chars) `requestBody`/`responseBody` with `*Truncated`/`*OmittedReason` fields — captured in `packages/capture-core` (shared by the extension and the paused npm client) via the existing `fetch`/XHR patches, not CDP, so both clients get it identically
-- Response bodies are read from a `.clone()` *after* the response is already returned to the caller's own code, so this never adds latency to the app's own `fetch` calls — the tradeoff is a request can emit twice: a fast entry first, then a fuller one once the body read resolves
+- Response bodies are read from a `.clone()` *after* the response is already returned to the caller's own code, so this never adds latency to the app's own `fetch` calls — the single `network.fetch`/`network.xhr` event for that request is emitted once the body read (or the decision to skip it) resolves, not before
 - Content-type gated (text/JSON/XML/form/GraphQL only) and redacted before emit — a new `redactSensitiveBodyFields` privacy toggle masks password/token/secret/apiKey-shaped JSON keys, independent of header redaction
 - `export_har` and `get_network_requests`/`get_logs_since` now carry real headers and status text; `get_response_body` is reframed as the CDP fallback for bodies capture-core skipped (binary, oversized, non-text content-type), not the primary path
 - Privacy options simplified alongside this: the old `redactHeaders`/`redactCookies` pair (redundant — cookies were always just header names) became one configurable `redactedHeaderNames` list, editable in the options page. The never-implemented `redactLocalStorage` option was removed rather than shipped as dead UI — see "Framework introspection" below for the tracked future work it belonged to.

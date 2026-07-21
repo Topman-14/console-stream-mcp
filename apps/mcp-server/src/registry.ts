@@ -1,4 +1,4 @@
-import type { ClientInfo } from "@mobius-mcp/protocol";
+import type { ClientInfo } from "@mobius-mcp/capture-core";
 import type { WebSocket } from "ws";
 
 const PURGE_DELAY_MS = Number(process.env.CONSOLE_STREAM_PURGE_DELAY_MS) || 5 * 60 * 1000;

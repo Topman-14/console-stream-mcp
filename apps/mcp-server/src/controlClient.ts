@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { PROTOCOL_VERSION, type ControlMessage } from "@mobius-mcp/protocol";
+import { PROTOCOL_VERSION, type ControlMessage } from "@mobius-mcp/capture-core";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 

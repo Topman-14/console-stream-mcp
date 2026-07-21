@@ -18,7 +18,7 @@ Root-only. This is an npm workspaces monorepo (`apps/*`, `packages/*`) — insta
 npm run build
 ```
 
-Builds every workspace in dependency order: `packages/protocol` → `packages/capture-core` → `apps/mcp-server` / `apps/npm-client` / `apps/browser-extension`. The apps consume the shared packages' built `dist/` output, not their TypeScript source — after editing `packages/protocol` or `packages/capture-core`, rebuild before an app will see the change (or use watch mode).
+Builds every workspace in dependency order: `packages/capture-core` → `apps/mcp-server` / `apps/npm-client` / `apps/browser-extension`. The apps consume `packages/capture-core`'s built `dist/` output, not its TypeScript source — after editing it, rebuild before an app will see the change (or use watch mode).
 
 Build one workspace:
 
@@ -33,7 +33,7 @@ npm run build -w apps/mcp-server
 npm run watch
 ```
 
-Does a one-time build of `packages/protocol`/`packages/capture-core`, then runs three labeled watchers in parallel: `[packages]` (`tsc -b --watch`), the extension's Vite dev server + esbuild watcher for the standalone content-script/injected bundles, and `apps/mcp-server`'s `tsup --watch`. Load the extension once via `chrome://extensions` → Developer Mode → Load unpacked → `apps/browser-extension/dist`; background/popup/options changes hot-reload via crxjs, but `content-script.ts`/`injected.ts` changes only take effect the next time they're injected (reload the target tab or toggle capture off/on).
+Does a one-time build of `packages/capture-core`, then runs three labeled watchers in parallel: `[packages]` (`tsc -b --watch`), the extension's Vite dev server + esbuild watcher for the standalone content-script/injected bundles, and `apps/mcp-server`'s `tsup --watch`. Load the extension once via `chrome://extensions` → Developer Mode → Load unpacked → `apps/browser-extension/dist`; background/popup/options changes hot-reload via crxjs, but `content-script.ts`/`injected.ts` changes only take effect the next time they're injected (reload the target tab or toggle capture off/on).
 
 If only the shared packages need rebuilding (e.g. working on `apps/npm-client` or `apps/mcp-server` without the extension watchers):
 
@@ -53,14 +53,15 @@ npm run start --workspace=apps/mcp-server
 
 ## Architecture
 
-Four packages implement one pipeline: a browser client captures runtime events and streams them over a local WebSocket to a Node server, which exposes them to AI agents as MCP tools over stdio.
+One shared package implements one pipeline: a browser client captures runtime events and streams them over a local WebSocket to a Node server, which exposes them to AI agents as MCP tools over stdio.
 
 ```
 apps/browser-extension/   Chrome MV3 extension — captures events in the page, streams over WS
 apps/npm-client/          Lightweight alternative to the extension for direct app integration (paused, no CDP)
 apps/mcp-server/          WS hub + MCP tool server (stdio)
-packages/capture-core/    Shared capture logic: console/network/error/navigation patching + redaction
-packages/protocol/        Shared wire-protocol types (ClientMessage/ServerMessage/ControlMessage, event schema)
+packages/capture-core/    Shared capture logic (console/network/error/navigation patching + redaction)
+                           and the wire-protocol types (ClientMessage/ServerMessage/ControlMessage, event
+                           schema) every workspace above compiles against
 skills/                   Scenario-focused agent skills (dead clicks, silent API failures, contract drift, etc.)
 ```
 
@@ -81,11 +82,11 @@ Auto-enable per site is rule-based (`src/lib/rules.ts` + `src/lib/host-permissio
 - **`src/registry.ts`** (`ClientRegistry`) — tracks connected clients; keeps a disconnected client around for a grace period (`PURGE_DELAY_MS`) so a page refresh doesn't instantly wipe its history.
 - **`src/commandDispatcher.ts`** — request/reply RPC over the same WS connection (`sendCommand` + matching `ack`), used for anything that isn't passive event capture (navigation, screenshots, `evaluate_js`, profiling).
 - **`src/mcpServer.ts`** (`createMcpServer`) — defines every MCP tool; each either reads `EventStore` directly or calls `dispatcher.sendCommand()`. Tools requiring CDP (`chrome.debugger`) only work with the extension client, gated by `requireCdp()`.
-- **Hub/follower pattern**: only one `mobius-mcp` process per machine can bind the WS port. If a second process (e.g. a second Claude Code session's own spawned server) loses that bind race (`EADDRINUSE`), it becomes a **follower**: `src/controlClient.ts` forwards its MCP tool calls to the hub over a `control-request`/`control-response` channel (`ControlMessage` in `packages/protocol`) instead of running a dead registry no browser can reach. See `src/index.ts` and `createFollowerMcpServer` in `src/mcpServer.ts`.
+- **Hub/follower pattern**: only one `mobius-mcp` process per machine can bind the WS port. If a second process (e.g. a second Claude Code session's own spawned server) loses that bind race (`EADDRINUSE`), it becomes a **follower**: `src/controlClient.ts` forwards its MCP tool calls to the hub over a `control-request`/`control-response` channel (`ControlMessage`, defined in `packages/capture-core`) instead of running a dead registry no browser can reach. See `src/index.ts` and `createFollowerMcpServer` in `src/mcpServer.ts`.
 
-### Protocol
+### Protocol (wire types)
 
-`packages/protocol/src/index.ts` and `events.ts` are the single source of truth for the wire format both the extension and the server compile against — `ClientMessage` (`hello`/`event`/`bye`/`ack`), `ServerMessage` (`command`), `ControlMessage` (follower forwarding), and the `BrowserEvent` union (console/error/network/navigation/dom-mutation). `PROTOCOL_VERSION` is checked on every connection; bump it when the message shape changes.
+`packages/capture-core/src/types.ts` is the single source of truth for the wire format both the extension and the server compile against — `ClientMessage` (`hello`/`event`/`bye`/`ack`), `ServerMessage` (`command`), `ControlMessage` (follower forwarding), and the `BrowserEvent` union (console/error/network/navigation/dom-mutation). `packages/capture-core/src/data.ts` holds `PROTOCOL_VERSION`, checked on every connection via `isProtocolVersionSupported()` (`utils/protocol.ts`) — bump it when the message shape changes. `apps/mcp-server` depends on `@mobius-mcp/capture-core` purely for these types/values (it doesn't use the DOM-patching functions); `types.ts` and `data.ts` have no DOM dependency, so this is safe to import from Node.
 
 ## Conventions
 
@@ -93,9 +94,9 @@ Auto-enable per site is rule-based (`src/lib/rules.ts` + `src/lib/host-permissio
 - **Smallest possible diff.** Scope every fix or update to exactly what was asked. Don't fold in unrelated cleanup, renames, or refactors into the same change, even if you notice something else worth improving — call it out separately instead.
 - **No unsolicited changes.** Don't add, remove, or refactor anything beyond the explicit ask.
 - **DRY / proper abstraction.** Shared logic belongs in one place, not duplicated across call sites — but only extract it when doing requested work in that area (see "smallest possible diff"), not as a standalone pass over unrelated code.
-- **Utils are grouped by shared concern, not dumped in one file.** When a file mixes primary logic with generic helpers, the helpers move to a `utils/` folder, split into files by what they operate on or what they import (e.g. `packages/capture-core/src/utils/{stringify,headers,body,dom}.ts`), not one large `utils.ts`.
+- **A package's `src/` separates types, static data, and logic.** `types.ts` holds every type/interface/enum (especially ones reused across files, e.g. `Emit`, `RedactionOptions`); `data.ts` holds static constants/config objects derived from those types (e.g. `PROTOCOL_VERSION`, `DEFAULT_REDACTION`); generic helper functions move to a `utils/` folder, split into files by what they operate on or what they import (e.g. `packages/capture-core/src/utils/{stringify,headers,body,dom,redact,protocol}.ts`) rather than dumped alongside the package's primary exported functions or piled into one large `utils.ts`. See `packages/capture-core/src/` for the reference layout.
 - **No comments except non-obvious WHY.** Default to no comments. The few that exist explain a hidden constraint or a workaround (e.g. the `NOTIFICATION_ICON` comment in `background.ts` explaining why it's a PNG, not SVG) — never restate what the code already says.
-- **No unnecessary backward-compatibility scaffolding.** Don't keep a thing around, or add indirection, just in case something might still need it — every type/value should have exactly one place to import it from. Example already in the codebase worth fixing next time it's touched: `packages/capture-core/src/index.ts` does `import type { CapturedEvent } from "@mobius-mcp/protocol"; export type { CapturedEvent };` — this re-export gives the same type two valid import paths (`@mobius-mcp/protocol` directly, or via `@mobius-mcp/capture-core`) for no reason; consumers should import `CapturedEvent` from `@mobius-mcp/protocol`, where it's actually defined. Same pattern, other shapes to watch for:
+- **No unnecessary backward-compatibility scaffolding.** Don't keep a thing around, or add indirection, just in case something might still need it — every type/value should have exactly one place to import it from. This is why `packages/protocol` no longer exists: it was a separate package whose entire contents were types also usable straight from `packages/capture-core` (which every consumer already depended on), so it only added a second import path and a build step for no benefit — its contents now live in `packages/capture-core/src/types.ts`/`data.ts` directly. Watch for the same shape elsewhere:
   - A barrel file re-exporting a name that already has one canonical home, "for convenience."
   - Keeping an old function signature, parameter, or exported alias around after every call site has moved off it, instead of deleting it.
   - `try/catch` or `??`/fallback branches defending against a case the calling code structurally can't produce.

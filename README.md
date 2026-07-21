@@ -42,8 +42,7 @@ Install the chromium extension [here](https://chromewebstore.google.com/detail/b
 | `apps/mcp-server` | Node.js MCP server; WebSocket hub + MCP tool implementations |
 | `apps/browser-extension` | Chromium extension that captures and streams browser events |
 | `apps/npm-client` | `mobius-client` npm package for direct app integration — **paused**, see [ROADMAP.md](./ROADMAP.md) |
-| `packages/protocol` | Versioned event schema and message envelope (private, bundled into published packages) |
-| `packages/capture-core` | Runtime hook patching shared by the extension and npm client (private, bundled) |
+| `packages/capture-core` | Versioned event schema/message envelope plus runtime hook patching, shared by the extension, npm client, and mcp-server (private, bundled) |
 | `skills` | Six scenario-focused agent skills for specific bug classes (dead clicks, silent 200s, contract drift, perf, session drift, bug documentation) — see below |
 | `examples` | Example apps demonstrating integration |
 
@@ -101,7 +100,7 @@ npm install
 npm run build
 ```
 
-`npm run build` builds every workspace in dependency order (`packages/protocol` → `packages/capture-core` → the apps), since `apps/browser-extension`, `apps/mcp-server`, and `apps/npm-client` all consume the built `dist/` output of the two shared packages, not their TypeScript source.
+`npm run build` builds every workspace in dependency order (`packages/capture-core` → the apps), since `apps/browser-extension`, `apps/mcp-server`, and `apps/npm-client` all consume the built `dist/` output of the shared package, not its TypeScript source.
 
 To run the MCP server from source instead of via `npx`:
 
@@ -117,19 +116,19 @@ For active development across the shared packages and the extension, run:
 npm run watch
 ```
 
-This does a one-time build of `packages/protocol`/`packages/capture-core` (so nothing is resolved against a missing `dist/` on a cold start), then runs three watchers in parallel with labeled output:
+This does a one-time build of `packages/capture-core` (so nothing is resolved against a missing `dist/` on a cold start), then runs three watchers in parallel with labeled output:
 
-* `[packages]` — `tsc -b --watch` for `packages/protocol` and `packages/capture-core`, incrementally rebuilding on save
+* `[packages]` — `tsc -b --watch` for `packages/capture-core`, incrementally rebuilding on save
 * `[vite]` — the extension's Vite dev server, which also drives crxjs's automatic extension reload in Chrome for background/popup/options changes
 * `[content-scripts]` — an esbuild watcher for `content-script.ts`/`injected.ts`, which are bundled as standalone IIFEs outside Vite's module graph (see the comment in `apps/browser-extension/vite.config.ts`)
 
 Load the extension once via `chrome://extensions` → enable Developer Mode → **Load unpacked** → select `apps/browser-extension/dist`. From then on:
 
-* Edits to `packages/protocol` or `packages/capture-core` propagate through to the extension's bundled output automatically.
+* Edits to `packages/capture-core` propagate through to the extension's bundled output automatically.
 * Edits to background/popup/options files trigger Vite/crxjs's automatic reload in Chrome.
 * Edits to `content-script.ts`/`injected.ts` rebuild immediately, but since those are injected on demand via `chrome.scripting.executeScript`, the new code takes effect the next time they're injected (reload the target tab, or toggle capture off/on) rather than needing an extension reload.
 
-If you only need the shared packages rebuilding (e.g. while working on `apps/npm-client` or `apps/mcp-server`) without the extension's Vite/esbuild watchers, run `npm run watch -w packages/capture-core` directly instead — its `tsc -b --watch` follows the TypeScript project reference to `packages/protocol`, so both get built and watched together.
+If you only need the shared package rebuilding (e.g. while working on `apps/npm-client` or `apps/mcp-server`) without the extension's Vite/esbuild watchers, run `npm run watch -w packages/capture-core` directly instead.
 
 ### Enabling capture (extension)
 
@@ -198,7 +197,7 @@ See [ROADMAP.md](./ROADMAP.md) for what "planned" maps to by stage.
 * Framework agnostic
 * Extension and npm client emit an identical, versioned protocol — the server can't tell them apart
 
-See [PROJECT.md](./PROJECT.md) for the full design doc and [ROADMAP.md](./ROADMAP.md) for staged future work.
+See [ROADMAP.md](./ROADMAP.md) for staged future work.
 
 ## Contributing
 

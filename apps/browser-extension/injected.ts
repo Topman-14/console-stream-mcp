@@ -1,4 +1,4 @@
-import { startCapture, patchDomMutations, type CapturedEvent, type CaptureStartOptions } from "@mobius-mcp/capture-core";
+import { startCapture, patchDomMutations, type CaptureStartOptions, type CapturedEvent } from "@mobius-mcp/capture-core";
 
 const MESSAGE_SOURCE = "mobius-mcp";
 

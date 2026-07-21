@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import type { EventType } from "@mobius-mcp/protocol";
+import type { EventType } from "@mobius-mcp/capture-core";
 import type { EventStore } from "./store.js";
 import type { ClientRegistry } from "./registry.js";
 import type { CommandDispatcher } from "./commandDispatcher.js";
@@ -98,7 +98,7 @@ export function createMcpServer(
 
   server.tool(
     "get_network_requests",
-    "Get the most recent fetch/XHR network requests observed in a connected browser tab, including request/response headers and size-capped (~20KB, redacted) request/response bodies where the content-type is text-like. A request may appear twice: a fast entry without responseBody, then a fuller one once the body finishes reading (non-blocking by design). Check requestBodyOmittedReason/responseBodyOmittedReason for why a body is missing (binary, FormData, non-text content-type) before assuming get_response_body is needed.",
+    "Get the most recent fetch/XHR network requests observed in a connected browser tab, including request/response headers and size-capped (~20KB, redacted) request/response bodies where the content-type is text-like. Check requestBodyOmittedReason/responseBodyOmittedReason for why a body is missing (binary, FormData, non-text content-type) before assuming get_response_body is needed.",
     { tabId: z.string().optional(), limit: z.number().int().positive().max(500).default(50) },
     async ({ tabId, limit }) => {
       const resolved = resolveTabId(tabId);

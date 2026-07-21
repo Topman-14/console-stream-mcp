@@ -14,5 +14,5 @@
     }
   },
   "include": ["src", "injected.ts"],
-  "references": [{ "path": "../../packages/capture-core" }, { "path": "../../packages/protocol" }]
+  "references": [{ "path": "../../packages/capture-core" }]
 }

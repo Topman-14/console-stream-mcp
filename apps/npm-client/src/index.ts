@@ -1,5 +1,4 @@
-import { startCapture } from "@mobius-mcp/capture-core";
-import { PROTOCOL_VERSION, type ClientMessage } from "@mobius-mcp/protocol";
+import { startCapture, PROTOCOL_VERSION, type ClientMessage } from "@mobius-mcp/capture-core";
 
 export interface StartMobiusStreamOptions {
   port?: number;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { PROTOCOL_VERSION, type ServerMessage } from "@mobius-mcp/protocol";
+import { PROTOCOL_VERSION, type ServerMessage } from "@mobius-mcp/capture-core";
 import type { ClientRegistry } from "./registry.js";
 
 interface Pending {

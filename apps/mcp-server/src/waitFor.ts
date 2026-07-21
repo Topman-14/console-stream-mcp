@@ -1,4 +1,4 @@
-import type { BrowserEvent } from "@mobius-mcp/protocol";
+import type { BrowserEvent } from "@mobius-mcp/capture-core";
 import type { EventStore } from "./store.js";
 import { ERROR_TYPES, NAVIGATION_TYPES, NETWORK_TYPES } from "./eventCategories.js";
 

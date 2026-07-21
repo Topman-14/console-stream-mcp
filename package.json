@@ -13,8 +13,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w packages/protocol -w packages/capture-core -w apps/mcp-server -w apps/npm-client -w apps/browser-extension",
-    "watch": "npm run build -w packages/protocol -w packages/capture-core -w apps/mcp-server && concurrently -n packages,extension,mcp-server -c yellow,magenta,cyan \"tsc -b packages/protocol packages/capture-core --watch --preserveWatchOutput\" \"npm run watch -w apps/browser-extension\" \"npm run watch -w apps/mcp-server\"",
+    "build": "npm run build -w packages/capture-core -w apps/mcp-server -w apps/npm-client -w apps/browser-extension",
+    "watch": "npm run build -w packages/capture-core -w apps/mcp-server && concurrently -n packages,extension,mcp-server -c yellow,magenta,cyan \"tsc -b packages/capture-core --watch --preserveWatchOutput\" \"npm run watch -w apps/browser-extension\" \"npm run watch -w apps/mcp-server\"",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },

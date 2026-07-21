@@ -1,4 +1,5 @@
-import { redactHeaderValue, type RedactionOptions } from "../redact.js";
+import { redactHeaderValue } from "./redact.ts";
+import type { RedactionOptions } from "../types.ts";
 
 export function extractHeaders(source: HeadersInit | Headers | undefined, redaction: RedactionOptions): Record<string, string> | undefined {
   if (!source) return undefined;

@@ -1,3 +1,5 @@
+import type { BodyCapture } from "../types.ts";
+
 const MAX_BODY_CHARS = 20_000;
 
 const CAPTURABLE_CONTENT_TYPE_RE = /^(text\/|application\/(json|.*\+json|xml|x-www-form-urlencoded|graphql))/i;
@@ -10,12 +12,6 @@ export function isCapturableContentType(mimeType: string | undefined): boolean {
 export function capBody(text: string): { body: string; truncated: boolean } {
   if (text.length <= MAX_BODY_CHARS) return { body: text, truncated: false };
   return { body: text.slice(0, MAX_BODY_CHARS), truncated: true };
-}
-
-export interface BodyCapture {
-  body?: string;
-  truncated?: boolean;
-  omittedReason?: string;
 }
 
 export function captureRequestBodyValue(raw: unknown): BodyCapture {

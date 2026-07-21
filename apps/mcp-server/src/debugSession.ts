@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { EventType } from "@mobius-mcp/protocol";
+import type { EventType } from "@mobius-mcp/capture-core";
 import type { EventStore } from "./store.js";
 import type { CommandDispatcher } from "./commandDispatcher.js";
 import { categoriesToTypes } from "./eventCategories.js";

@@ -1,3 +1,4 @@
+import type { RedactionOptions } from "@mobius-mcp/capture-core";
 import { defineSetting } from "./storage.js";
 
 export interface CaptureOptions {
@@ -7,12 +8,7 @@ export interface CaptureOptions {
   dom: boolean;
 }
 
-export interface PrivacyOptions {
-  redactedHeaderNames: string[];
-  maskEmails: boolean;
-  maskJwts: boolean;
-  redactSensitiveBodyFields: boolean;
-}
+export type PrivacyOptions = RedactionOptions;
 
 export const DEFAULT_CAPTURE_OPTIONS: CaptureOptions = {
   console: true,

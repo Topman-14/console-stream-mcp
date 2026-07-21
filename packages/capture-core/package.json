@@ -2,14 +2,11 @@
   "name": "@mobius-mcp/capture-core",
   "version": "0.0.1",
   "private": true,
-  "description": "Runtime hook patching (console, errors, network) shared by the browser extension and npm client",
+  "description": "Wire protocol types and runtime hook patching (console, errors, network) shared by the browser extension, npm client, and MCP server",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "dependencies": {
-    "@mobius-mcp/protocol": "0.0.1"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -b tsconfig.json --watch --preserveWatchOutput"

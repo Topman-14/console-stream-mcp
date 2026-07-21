@@ -1,9 +1,4 @@
-export interface RedactionOptions {
-  redactedHeaderNames: string[];
-  maskEmails: boolean;
-  maskJwts: boolean;
-  redactSensitiveBodyFields: boolean;
-}
+import type { RedactionOptions } from "../types.ts";
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const JWT_RE = /\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import { PROTOCOL_VERSION, isProtocolVersionSupported, type ClientMessage, type ControlMessage } from "@mobius-mcp/protocol";
+import { PROTOCOL_VERSION, isProtocolVersionSupported, type ClientMessage, type ControlMessage } from "@mobius-mcp/capture-core";
 import type { EventStore } from "./store.js";
 import type { ClientRegistry } from "./registry.js";
 import type { CommandDispatcher } from "./commandDispatcher.js";

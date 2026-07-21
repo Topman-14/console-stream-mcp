@@ -1,4 +1,4 @@
-import type { EventType } from "@mobius-mcp/protocol";
+import type { EventType } from "@mobius-mcp/capture-core";
 
 export const CONSOLE_TYPES: EventType[] = ["console.log", "console.info", "console.warn"];
 export const ERROR_TYPES: EventType[] = ["console.error", "window.onerror", "unhandledrejection"];

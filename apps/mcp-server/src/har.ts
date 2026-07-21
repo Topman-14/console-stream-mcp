@@ -1,4 +1,4 @@
-import type { BrowserEvent } from "@mobius-mcp/protocol";
+import type { BrowserEvent } from "@mobius-mcp/capture-core";
 
 function toHarHeaders(headers: Record<string, string> | undefined): Array<{ name: string; value: string }> {
   return headers ? Object.entries(headers).map(([name, value]) => ({ name, value })) : [];
