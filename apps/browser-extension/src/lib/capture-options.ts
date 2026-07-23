@@ -14,7 +14,7 @@ export const DEFAULT_CAPTURE_OPTIONS: CaptureOptions = {
   console: true,
   network: true,
   errors: true,
-  dom: true,
+  dom: false,
 };
 
 export const DEFAULT_REDACTED_HEADER_NAMES = ["authorization", "cookie", "set-cookie", "x-api-key"];

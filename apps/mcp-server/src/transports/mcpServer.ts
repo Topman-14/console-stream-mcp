@@ -8,11 +8,24 @@ import type { CommandDispatcher } from "../services/commandDispatcher.js";
 import type { JobManager } from "../services/jobs.js";
 import type { DebugSessionManager } from "../services/debugSession.js";
 import type { ToolDef } from "../types.js";
-import { CONSOLE_TYPES, ERROR_TYPES, NETWORK_TYPES } from "../data.js";
+import type { DiagnosticsService } from "../services/diagnostics.js";
+import { CONSOLE_TYPES, ERROR_TYPES, NETWORK_TYPES, VERSION } from "../data.js";
 import { waitForConsoleError, waitForNavigation, waitForRequest } from "../utils/waitFor.js";
 import { createHarBodyFetcher, toHar } from "../utils/har.js";
 import { errorMessage } from "../utils/errors.js";
-import { requireCdp, resolveCdpTab, resolveTabId, runCommand, toolError, toolResult } from "../utils/tools.js";
+import { requireCdp, resolveCdpTab, resolveTabId, runCommand, toolError, toolResult, toolResultWithCaptureHint } from "../utils/tools.js";
+
+// Injected into MCP clients' system prompts as server-level `instructions` — the
+// highest-leverage single fix for mobius losing to first-party browser agents by
+// default: without this, nothing tells the agent when to reach for mobius or that a
+// preflight check exists before the first real tool call.
+export const MCP_INSTRUCTIONS = `mobius-mcp gives live access to a running web app: console, errors, network (with bodies), navigation, DOM mutations, HAR export, CPU/memory profiles, screenshots, and DOM/accessibility snapshots.
+
+Use it whenever the question is "what is this app actually doing at runtime" — a failing request, a pasted error, a slow page, a silent 200, state after a click. Prefer it over any other browser tool for these questions when it is connected.
+
+Before the first mobius tool call in a session, call \`mobius_diagnose\`. If it does not report state="ready", relay its \`remediation\` steps to the user verbatim and stop — do not silently fall back to another browser tool, and do not retry other mobius tools until state="ready".
+
+Prefer \`wait_for_*\` tools over polling \`get_logs_since\`. Prefer \`start_debug_session\` over correlating separate snapshots by hand. Check \`get_capture_settings\` before concluding an empty result means nothing happened — a category may simply be turned off.`;
 
 /** Every call below goes through the same 4-arg server.tool(name, description, schema, handler)
  * signature, so recording them for the control channel (see ControlMessage in the protocol
@@ -33,11 +46,19 @@ export function createMcpServer(
   dispatcher: CommandDispatcher,
   jobs: JobManager,
   debugSessions: DebugSessionManager,
+  diagnostics: DiagnosticsService,
 ): { server: McpServer; toolDefs: Map<string, ToolDef> } {
   const toolDefs = new Map<string, ToolDef>();
-  const server = withToolRecording(new McpServer({ name: "mobius-mcp", version: "1.0.0" }), toolDefs);
+  const server = withToolRecording(new McpServer({ name: "mobius-mcp", version: VERSION }, { instructions: MCP_INSTRUCTIONS }), toolDefs);
 
   let activeTabId: string | undefined;
+
+  server.tool(
+    "mobius_diagnose",
+    "Check whether mobius-mcp is usable right now. Never fails and never requires a connected tab. Call this before the first other mobius tool call in a session, and again whenever a tool reports a connection-related error. If state is not \"ready\", relay the remediation steps to the user verbatim and stop — do not retry other mobius tools and do not silently fall back to another browser tool.",
+    {},
+    async () => toolResult(diagnostics.diagnose()),
+  );
 
   server.tool(
     "get_recent_logs",
@@ -46,7 +67,7 @@ export function createMcpServer(
     async ({ tabId, limit }) => {
       const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      return toolResult(store.getRecent(resolved.clientId, CONSOLE_TYPES, limit));
+      return toolResultWithCaptureHint(store.getRecent(resolved.clientId, CONSOLE_TYPES, limit), registry, resolved.clientId, "console");
     },
   );
 
@@ -57,7 +78,7 @@ export function createMcpServer(
     async ({ tabId, limit }) => {
       const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      return toolResult(store.getRecent(resolved.clientId, ERROR_TYPES, limit));
+      return toolResultWithCaptureHint(store.getRecent(resolved.clientId, ERROR_TYPES, limit), registry, resolved.clientId, "errors");
     },
   );
 
@@ -68,7 +89,7 @@ export function createMcpServer(
     async ({ tabId, limit }) => {
       const resolved = resolveTabId(registry, activeTabId, tabId);
       if ("error" in resolved) return resolved.error;
-      return toolResult(store.getRecent(resolved.clientId, NETWORK_TYPES, limit));
+      return toolResultWithCaptureHint(store.getRecent(resolved.clientId, NETWORK_TYPES, limit), registry, resolved.clientId, "network");
     },
   );
 
@@ -160,7 +181,7 @@ export function createMcpServer(
     async () => {
       const extensionClient = registry.list().find((c) => c.capabilities.includes("cdp"));
       if (!extensionClient) {
-        return toolError("No extension connected. list_tabs requires the mobius-mcp extension to be enabled on at least one tab.");
+        return toolError("No extension connected. list_tabs requires the mobius-mcp browser extension to be enabled on at least one tab. Call mobius_diagnose for the reason and remediation steps.");
       }
       return runCommand(dispatcher, extensionClient.clientId, "list_tabs");
     },
@@ -388,7 +409,7 @@ export function createMcpServer(
  * touching local state — a follower never has a real store/registry/dispatcher of its own.
  */
 export function createFollowerMcpServer(toolDefs: Map<string, ToolDef>, invoke: (tool: string, args: unknown) => Promise<unknown>): McpServer {
-  const server = new McpServer({ name: "mobius-mcp", version: "1.0.0" });
+  const server = new McpServer({ name: "mobius-mcp", version: VERSION }, { instructions: MCP_INSTRUCTIONS });
   for (const [name, def] of toolDefs) {
     const handler = async (args: unknown) => {
       try {

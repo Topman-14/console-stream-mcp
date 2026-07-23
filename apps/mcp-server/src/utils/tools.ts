@@ -1,3 +1,4 @@
+import type { BrowserEvent, CaptureSettings } from "@mobius-mcp/capture-core";
 import type { ClientRegistry } from "../services/registry.js";
 import type { CommandDispatcher } from "../services/commandDispatcher.js";
 import type { TabResolution, ToolTextContent } from "../types.js";
@@ -5,6 +6,31 @@ import { errorMessage } from "./errors.js";
 
 export function toolResult(data: unknown): ToolTextContent {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+}
+
+/** get_recent_logs/get_recent_errors/get_network_requests share this: an empty array is
+ * ambiguous between "nothing happened" and "that capture category is off for this tab" —
+ * get_capture_settings answers it, but only if the agent knows to call it. Inline the
+ * relevant flag on the empty path instead so it never has to guess. Non-empty results are
+ * returned exactly as before (a bare array) — this only changes shape when it would
+ * otherwise have been the least informative possible response, `[]`. */
+export function toolResultWithCaptureHint(
+  events: BrowserEvent[],
+  registry: ClientRegistry,
+  clientId: string,
+  category: keyof CaptureSettings,
+): ToolTextContent {
+  if (events.length > 0) return toolResult(events);
+  const captureSettings = registry.get(clientId)?.captureSettings;
+  const enabled = captureSettings?.[category];
+  if (enabled === false) {
+    return toolResult({
+      events: [],
+      captureEnabled: false,
+      hint: `The "${category}" capture category is off for this tab, which is why this is empty — not necessarily that nothing happened. Call get_capture_settings to confirm, or ask the user to enable it in the extension options.`,
+    });
+  }
+  return toolResult(events);
 }
 
 export function toolError(message: string): ToolTextContent {
@@ -18,7 +44,7 @@ export function resolveTabId(registry: ClientRegistry, activeTabId: string | und
 
   const connected = registry.list();
   if (connected.length === 0) {
-    return { error: toolError("No tabs connected. Ask the user to click the mobius-mcp extension icon and enable capture on the tab they want debugged.") };
+    return { error: toolError('No tabs connected. Call mobius_diagnose for the reason and remediation steps — do not guess.') };
   }
   if (activeTabId && connected.some((c) => c.clientId === activeTabId)) {
     return { clientId: activeTabId };

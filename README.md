@@ -22,6 +22,7 @@ Local-first. No cloud services, no telemetry, no external APIs.
 - [Configuration](#configuration)
 - [Enabling capture (extension)](#enabling-capture-extension)
 - [MCP tools](#mcp-tools)
+- [Troubleshooting](#troubleshooting)
 - [Client capabilities](#client-capabilities)
 - [Skills](#skills)
 - [Design principles](#design-principles)
@@ -133,6 +134,7 @@ The extension never captures anything by default. Click its toolbar icon and hit
 
 ## MCP tools
 
+* `mobius_diagnose` — check whether mobius-mcp is usable right now: connection state, ever-connected history, and ordered remediation steps. Never fails, never requires a tab. Call this first in a session, and again after any connection-related tool error — see [Troubleshooting](#troubleshooting).
 * `get_recent_logs`
 * `get_recent_errors`
 * `get_network_requests` — includes request/response headers and size-capped, redacted request/response bodies for text-like content-types (both browser clients, no CDP needed)
@@ -154,6 +156,18 @@ The extension never captures anything by default. Click its toolbar icon and hit
 * `start_cpu_profile`, `start_memory_profile` — extension only, requires CDP, job-based (see `get_job_status`/`get_job_result`)
 
 CDP tools (marked "requires CDP" above) make Chrome show a persistent "being debugged" banner on the tab once used — the debugger attaches on first use and stays attached, it doesn't attach/detach per call. This is a Chrome-level indicator, not something the extension can suppress. `start_cpu_profile`/`start_memory_profile` durations are capped at 60s and best-effort beyond ~25-30s — Chrome can terminate an idle MV3 background service worker, which would cut a long profile short.
+
+## Troubleshooting
+
+If an agent reports mobius-mcp isn't working, ask it to call the `mobius_diagnose` tool — it returns a `state` (`ready`, `no_client_ever_connected`, `client_disconnected`, `handshake_rejected`, or `ws_bind_failed`) plus ordered remediation steps, and never fails or requires a tab to be connected.
+
+To check from outside an MCP session entirely (no agent running, or you want to confirm the server itself is healthy before debugging further):
+
+```bash
+npx mobius-mcp --health
+```
+
+Prints the same diagnostic payload as JSON and exits `0` if `state` is `"ready"`, `1` otherwise. This talks to whichever mobius-mcp process is already bound to the configured port (`CONSOLE_STREAM_PORT`, default `7331`) — it doesn't start a new server, so run it while your MCP client (and therefore its spawned `mobius-mcp` process) is active.
 
 ## Client capabilities
 

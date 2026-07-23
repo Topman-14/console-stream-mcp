@@ -1,5 +1,6 @@
 export type {
   BrowserEvent,
+  CaptureSettings,
   CaptureStartOptions,
   CapturedEvent,
   ClientInfo,

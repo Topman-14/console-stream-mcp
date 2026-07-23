@@ -3,6 +3,45 @@ import { WebSocket } from "ws";
 import { PROTOCOL_VERSION, type ControlMessage } from "@mobius-mcp/capture-core";
 import { CONTROL_REQUEST_TIMEOUT_MS } from "../data.js";
 
+export type ControlProbeResult = { ok: true; result: unknown } | { ok: false; reason: "unreachable" | "error"; error?: string };
+
+/** A single bounded control-request, used by DiagnosticsService.checkExternal — unlike
+ * ControlClient below, this doesn't stay connected or retry; it answers within
+ * `timeoutMs` or reports unreachable. */
+export function probeControlRequest(port: number, tool: string, args: unknown, timeoutMs: number): Promise<ControlProbeResult> {
+  return new Promise((resolve) => {
+    const requestId = randomUUID();
+    let settled = false;
+    const settle = (result: ControlProbeResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ws.terminate();
+      resolve(result);
+    };
+
+    const ws = new WebSocket(`ws://localhost:${port}`);
+    const timer = setTimeout(() => settle({ ok: false, reason: "unreachable" }), timeoutMs);
+
+    ws.on("open", () => {
+      const message: ControlMessage = { version: PROTOCOL_VERSION, kind: "control-request", requestId, tool, args };
+      ws.send(JSON.stringify(message));
+    });
+    ws.on("message", (raw) => {
+      let message: ControlMessage;
+      try {
+        message = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+      if (message.kind !== "control-response" || message.requestId !== requestId) return;
+      if (message.error) settle({ ok: false, reason: "error", error: message.error });
+      else settle({ ok: true, result: message.result });
+    });
+    ws.on("error", () => settle({ ok: false, reason: "unreachable" }));
+  });
+}
+
 /** Used by a follower process (see index.ts) to forward MCP tool calls to whichever
  * process actually won the WS port bind and is acting as the hub. */
 export class ControlClient {

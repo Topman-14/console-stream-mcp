@@ -1,12 +1,21 @@
 import * as os from "node:os";
 import * as path from "node:path";
+import { createRequire } from "node:module";
 import type { EventType } from "@mobius-mcp/capture-core";
 
 export const WS_PORT_DEFAULT = 7331;
 
+// Single source of truth for the server's own version — read from package.json at
+// startup rather than build-time-inlined, so it's correct running from source too
+// (`npm run start -w apps/mcp-server`), not just from a tsup build. Every place that
+// used to hardcode a version (both McpServer constructors, HAR_CREATOR_VERSION) reads
+// this instead — three independent hardcodes previously drifted to three different values.
+const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
+export const VERSION = version;
+
 // utils/har.ts's HAR 1.2 "creator" field.
 export const HAR_CREATOR_NAME = "mobius-mcp";
-export const HAR_CREATOR_VERSION = "0.0.1";
+export const HAR_CREATOR_VERSION = VERSION;
 
 export const CLIENT_PURGE_DELAY_MS = Number(process.env.CONSOLE_STREAM_PURGE_DELAY_MS) || 5 * 60 * 1000;
 
