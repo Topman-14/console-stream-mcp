@@ -4,6 +4,7 @@ import { PROTOCOL_VERSION, isProtocolVersionSupported, type ClientMessage, type 
 import type { EventStore } from "../services/store.js";
 import type { ClientRegistry } from "../services/registry.js";
 import type { CommandDispatcher } from "../services/commandDispatcher.js";
+import type { DiagnosticsService } from "../services/diagnostics.js";
 import type { ToolDef } from "../types.js";
 
 /** Resolves once the port is actually bound (this process becomes the hub), rejects on
@@ -15,6 +16,7 @@ export function startWsServer(
   registry: ClientRegistry,
   dispatcher: CommandDispatcher,
   toolDefs: Map<string, ToolDef>,
+  diagnostics: DiagnosticsService,
 ): Promise<WebSocketServer> {
   const wss = new WebSocketServer({ host: "localhost", port });
 
@@ -23,6 +25,7 @@ export function startWsServer(
 
     wss.on("listening", () => {
       console.error(`[mobius-mcp] WebSocket server listening on ws://localhost:${port}`);
+      diagnostics.reportListening(port);
       if (!settled) {
         settled = true;
         resolve(wss);
@@ -31,6 +34,7 @@ export function startWsServer(
 
     wss.on("error", (err) => {
       console.error(`[mobius-mcp] WebSocket server error:`, err);
+      diagnostics.reportBindFailed(port, err);
       if (!settled) {
         settled = true;
         reject(err);
@@ -50,6 +54,7 @@ export function startWsServer(
         }
 
         if (!isProtocolVersionSupported(message.version)) {
+          diagnostics.reportHandshakeRejected();
           ws.close(4000, `unsupported protocol version, server expects ${PROTOCOL_VERSION}`);
           return;
         }
@@ -84,7 +89,7 @@ export function startWsServer(
 
         if (message.kind === "bye" && clientIds.has(message.clientId)) {
           clientIds.delete(message.clientId);
-          registry.markDisconnected(message.clientId);
+          registry.markDisconnected(message.clientId, "bye");
           return;
         }
 

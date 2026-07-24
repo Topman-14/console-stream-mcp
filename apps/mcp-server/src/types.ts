@@ -12,6 +12,40 @@ export interface EventSink {
   clear(clientId: string): void;
 }
 
+// services/diagnostics.ts
+export type DiagnoseState =
+  | "ready"
+  | "no_client_ever_connected"
+  | "client_disconnected"
+  | "handshake_rejected"
+  | "ws_bind_failed"
+  // Only reachable via DiagnosticsService.checkExternal (the `--health` CLI probe), which
+  // runs in a process that never bound the port itself.
+  | "no_server_running"
+  | "error";
+
+export interface RemediationStep {
+  step: string;
+  userAction: boolean;
+}
+
+export interface DiagnosePayload {
+  state: DiagnoseState;
+  wsPort: number;
+  wsListening: boolean;
+  serverVersion: string;
+  protocolVersion: number;
+  clients: ClientInfo[];
+  everConnected: boolean;
+  lastClientSeenAt: number | null;
+  lastDisconnectReason: string | null;
+  rejectedHandshakes: number;
+  remediation: RemediationStep[];
+  agentGuidance: string;
+  /** Set only for state "error". */
+  error?: string;
+}
+
 // commandDispatcher.ts
 export interface PendingCommand {
   resolve: (result: unknown) => void;
